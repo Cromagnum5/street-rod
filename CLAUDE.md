@@ -70,7 +70,10 @@ sound is synthesized live with the Web Audio API.
 - Camera drama comes from **acceleration, not speed**: framing follows the
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big
-  FOV swings. Steady-speed widening is capped at +9°.
+  FOV swings. Steady-speed widening is capped at +9°. Chase distance is
+  deliberately tight (Jason, 2026-07-10): `4.3 + camSpeed * 0.013` — ~5 m
+  behind at speed, height scaled to keep the same look-down angle. Don't
+  pull it back out; any closer needs the lookAt point pulled in too.
 - Suspension (added 2026-07-10): the body is a spring-damper chasing chassis
   acceleration — soft springs lean ~7–8° with underdamped slosh (deliberately
   cartoonish), Full Race Suspension sits ~1° flat. Roll costs grip (load
