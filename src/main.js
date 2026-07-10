@@ -453,9 +453,9 @@ function raceTick(t, dt) {
   race.time += dt;
   const p = race.player, ai = race.ai;
 
-  const thr = (keys.ArrowUp || keys.KeyW) ? 1 : 0;
+  const thr = (keys.ArrowUp || keys.KeyW || keys.ControlLeft || keys.ControlRight) ? 1 : 0;
   const brk = (keys.ArrowDown || keys.KeyS) ? 1 : 0;
-  const steer = ((keys.ArrowRight || keys.KeyD) ? 1 : 0) - ((keys.ArrowLeft || keys.KeyA) ? 1 : 0);
+  const steer = ((keys.ArrowLeft || keys.KeyA) ? 1 : 0) - ((keys.ArrowRight || keys.KeyD) ? 1 : 0);
 
   if (race.countdown > 0) {
     race.countdown -= dt;
