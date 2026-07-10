@@ -129,6 +129,11 @@ cornering-scrub and finish-teleport numbers precisely.
   full lock) because digital keys at full lock always exceed grip; the
   smoothed value also drives the front-wheel visuals. Over-grip speed scrub
   in physics is deliberately gentle (10%/s cap).
+- Wheel groups get both accumulated spin (`rotation.x += …`) and steer yaw
+  (`rotation.y =`) on the same Euler, so `addWheels()` sets
+  `rotation.order = "YXZ"` (yaw wraps spin). Don't remove it — the default
+  XYZ order tumbles the yawed wheel with the spin angle and steered fronts
+  wobble once per revolution (fixed `8b22178`).
 
 - `/home/cromulon` briefly had a stray commit-less `.git` (deleted
   2026-07-10). If `git add -A` ever stages home-dir files again, stop —
