@@ -126,6 +126,19 @@ export const STREET_RACERS = [
   { name: "Hairpin Hazel",      flavor: "Takes corners like they owe her money." },
 ];
 
+// Street-racer paint colors, dealt out so no two cars in a roster match.
+// Period lot colors only — pink is reserved for bosses.
+export const RACER_COLORS = [
+  0xc23b22, // regal red
+  0xe8b23a, // butterscotch gold
+  0x3f6fae, // nassau blue
+  0x4e8f4e, // highland green
+  0xe8e4d8, // wimbledon white
+  0x7d3fa8, // plum crazy purple
+  0xf07f2e, // hugger orange
+  0x9aa2ab, // sterling silver
+];
+
 // Boss ladder — index i is the boss you beat to win the tier i+1 car.
 export const BOSSES = [
   { name: "GREASY PETE",     flavor: "King of the burger lot. His Deuce has never lost to a Model A. Yet." },

@@ -29,9 +29,14 @@ sound is synthesized live with the Web Audio API.
   RESULTS`), renderer, chase camera, race loop, economy, localStorage save
   (`SAVE_KEY` in data.js). States are objects with `enter/exit/onKey`;
   per-frame work goes through the module-level `sceneTick` callback.
+  Opponent cards show a portrait of the racer's car (`carPortrait`): a
+  second small offscreen WebGLRenderer, data-URLs cached per tier+color.
 - `src/data.js` — all balance data: `CAR_TIERS` (7-car pink-slip ladder,
   Model A → Hemi 'Cuda, each with a `susp` base softness), `PARTS`
-  (6 categories × 3 buyable levels), racer names/flavor, `BOSSES` ladder.
+  (6 categories × 3 buyable levels), racer names/flavor, `RACER_COLORS`
+  (period paints shuffled per roster in `makeRoster` so no two opponents
+  match — the race AI mesh wears the same `opp.carColor` as the card;
+  bosses stay pink, so no pinks in the list), `BOSSES` ladder.
 - `src/carmesh.js` — procedural car builder; three era styles (`prewar`,
   `fifties`, `muscle`) from boxes/cylinders + a `wedge()` prism helper.
   Returns a Group facing +Z with `userData.wheels` for spin/steer and

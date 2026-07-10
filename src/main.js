@@ -2,7 +2,7 @@
 // States: TITLE -> GARAGE <-> OPPONENTS -> RACE -> RESULTS -> GARAGE
 
 import * as THREE from "three";
-import { CAR_TIERS, PARTS, PART_KEYS, STREET_RACERS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
+import { CAR_TIERS, PARTS, PART_KEYS, STREET_RACERS, RACER_COLORS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
 import { buildCar } from "./carmesh.js";
 import { Track, PALETTES, ROAD_HALF_W } from "./track.js";
 import { CarSim, effectiveStats, topSpeed, resolveContact, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
@@ -262,6 +262,7 @@ let roster = [], rosterIdx = 0, cardEl = null;
 function makeRoster() {
   const tier = player.carTier;
   const names = [...STREET_RACERS].sort(() => Math.random() - 0.5);
+  const colors = [...RACER_COLORS].sort(() => Math.random() - 0.5);
   roster = [];
   for (let i = 0; i < 4; i++) {
     const skill = 0.2 + Math.random() * 0.6;
@@ -270,7 +271,7 @@ function makeRoster() {
     wager = Math.min(wager, Math.max(25, player.money)); // never dangle a bet you can't cover
     roster.push({
       name: names[i].name, flavor: names[i].flavor,
-      carTier, skill, wager, boss: false,
+      carTier, skill, wager, boss: false, carColor: colors[i],
       partBoost: Math.random() < skill ? 1 : 0,
     });
   }
@@ -279,6 +280,7 @@ function makeRoster() {
     roster[0] = {
       name: "Free-Ride Freddy", flavor: "Races for the love of it. Slips you gas money if you win.",
       carTier: Math.max(0, tier - 1), skill: 0.25, wager: 0, prize: 100, boss: false, partBoost: 0,
+      carColor: 0x8a8a82, // primer gray — he races for love, not paint
     };
   }
   roster.sort((a, b) => a.skill - b.skill);
@@ -287,6 +289,7 @@ function makeRoster() {
     roster.push({
       name: b.name, flavor: b.flavor,
       carTier: tier + 1, skill: 0.8 + tier * 0.03, wager: 0, boss: true, partBoost: 1,
+      carColor: 0xff4fa3, // bosses are pink, always
     });
   }
 }
@@ -317,12 +320,48 @@ states.OPPONENTS = {
   },
 };
 
+// Opponent car portraits: one small offscreen renderer shared by every card,
+// results cached per tier+color (the roster reshuffles colors each visit).
+let portraitGL = null;
+const portraitCache = new Map();
+function carPortrait(tierIdx, color) {
+  const cacheKey = `${tierIdx}:${color}`;
+  const hit = portraitCache.get(cacheKey);
+  if (hit) return hit;
+  if (!portraitGL) {
+    portraitGL = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    portraitGL.setPixelRatio(1);
+    portraitGL.setSize(816, 300, false);
+  }
+  const s = new THREE.Scene();
+  s.add(new THREE.AmbientLight(0xffffff, 0.65));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+  sun.position.set(3, 5, 4);
+  s.add(sun);
+  const fill = new THREE.DirectionalLight(0xbcd0ff, 0.5);
+  fill.position.set(-4, 2, -2);
+  s.add(fill);
+  const car = buildCar(CAR_TIERS[tierIdx], { color });
+  car.rotation.y = 0.62; // front three-quarter, like a catalog photo
+  s.add(car);
+  const L = car.userData.length;
+  const cam = new THREE.PerspectiveCamera(26, 816 / 300, 0.1, 60);
+  cam.position.set(0, L * 0.34, L * 1.3);
+  cam.lookAt(0, 0.68, 0);
+  portraitGL.render(s, cam);
+  const url = portraitGL.domElement.toDataURL("image/png");
+  disposeScene(s);
+  portraitCache.set(cacheKey, url);
+  return url;
+}
+
 function cardHTML(opp) {
   const stars = Math.max(1, Math.round(opp.skill * 5));
   const carName = CAR_TIERS[opp.carTier].name;
   return `
     <div class="oppName">${opp.name}</div>
     <div class="oppCar">${carName}</div>
+    <div class="oppPhoto"><img src="${carPortrait(opp.carTier, opp.carColor)}" alt="${carName}"></div>
     <div class="oppFlavor">&ldquo;${opp.flavor}&rdquo;</div>
     <div class="oppStats">
       <div>SKILL <span class="stars"><span class="lit">${"&#9733;".repeat(stars)}</span>${"&#9734;".repeat(5 - stars)}</span></div>
@@ -425,7 +464,7 @@ function buildRaceScene(opp) {
   race.ai = new CarSim(aStats, track, 3);
   race.driver = new AIDriver(race.ai, track, opp.skill, 3);
   race.playerMesh = buildCar(playerTier());
-  race.aiMesh = buildCar(aiTierData, opp.boss ? { color: 0xff4fa3 } : {});
+  race.aiMesh = buildCar(aiTierData, { color: opp.carColor }); // same paint as the card
   scene.add(race.playerMesh, race.aiMesh);
 
   race.playerVoice = new sfx.EngineVoice(soundSpec(playerTier(), player.parts), 0.5);
