@@ -127,6 +127,11 @@ imports `physics.js` (and `Track` if needed) with the same esbuild
 `--alias:three` trick, then step `CarSim` directly. A stub track
 (`{ length, sample, project }`) works for straight-line tests; a real
 `new Track(len, seed)` plus a crude centerline chaser works for full runs.
+When A/B-comparing `AIDriver` tunings, stub `Math.random` with a seeded LCG
+first — `wobblePhase` makes runs non-deterministic otherwise. Useful
+metrics: offroad s/race, worst |lateral|, taps/s, straight-line steer RMS
+(sample where `curvatureAt < 2e-4`). 6 seeds is too noisy to trust offroad
+deltas; 16 showed a real 4.2s-vs-0.9s regression that 6 hid.
 Compare tunings by `git stash` / re-bundle / `git stash pop` (use
 `git -C <repo>` — the bundles run from the scratchpad). This caught the
 cornering-scrub and finish-teleport numbers precisely.
