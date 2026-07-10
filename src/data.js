@@ -103,7 +103,7 @@ export const PARTS = {
     affects: "shift",
     levels: [
       { n: "Stock 3-Speed",    mult: 1.00, price: 0,    shiftTime: 0.45 },
-      { n: "4-Speed Manual",   mult: 1.06, price: 300,  shiftTime: 0.32 },
+      { n: "4-Speed Automatic", mult: 1.06, price: 300,  shiftTime: 0.32, minGears: 4 },
       { n: "Close-Ratio Box",  mult: 1.12, price: 800,  shiftTime: 0.22 },
       { n: "Race Box",         mult: 1.18, price: 1800, shiftTime: 0.12 },
     ],

@@ -110,6 +110,11 @@ sound is synthesized live with the Web Audio API.
   rev for the last 1.2s into the launch. Balance note: launches no longer
   stagger by skill — if 1–2★ racers ever feel too strong off the line,
   reintroduce a small stagger via partial (not zero) pre-reaction throttle.
+- Gearboxes are all automatics — the sim auto-shifts, so part names must
+  not say "Manual" (Jason's call, 2026-07-10). Gear count is
+  `max(tier.gears + closeRatioBonus, level.minGears)` in `effectiveStats`;
+  the level-1 box's `minGears: 4` is what makes it a real 4-speed on the
+  3-gear tiers.
 - Feel changes (steering, physics, camera) get committed only after Jason
   playtests in his browser and confirms.
 

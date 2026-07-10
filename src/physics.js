@@ -39,7 +39,7 @@ export function effectiveStats(tier, partLevels) {
     grip,
     softness,
     cornerGrip: grip * suspensionGripFactor(softness),
-    gears: tier.gears + (partLevels.gearbox >= 2 ? 1 : 0),
+    gears: Math.max(tier.gears + (partLevels.gearbox >= 2 ? 1 : 0), gb.minGears ?? 0),
     shiftTime: gb.shiftTime,
     cyl: tier.cyl,
   };
