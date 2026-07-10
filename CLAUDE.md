@@ -87,6 +87,19 @@ sound is synthesized live with the Web Audio API.
   Softness = tier `susp` (era-scaled, old iron wallows more) × part level
   `softness` in `data.js`. Keep `suspensionGripFactor` in sync with the
   in-step loss so the AI planner and garage stat match what the sim does.
+- AI plays on a virtual keyboard (Jason's call, 2026-07-10): `AIDriver`
+  quantizes its pure-pursuit intent into on/off key states so passing racers
+  weave and correct like a human. Steer is closed-loop tapping — press
+  toward the want, release past it — through the same dt*9 ramp as the
+  player's keys; pedals are duty-cycle taps. Two load-bearing details:
+  releases are instant (only re-presses are dwell-gated — gating releases
+  makes the wheels flick ~0.5 steer on every straight-line correction), and
+  corners release lazily at `steerWant * 1.2` (release exactly at the want
+  and the tap-band sags under it — sim showed the boss running wide,
+  4.2s/race offroad vs 0.9 analog baseline; lazy release restores 1.1s).
+  Knobs in `ai.js`: `tapPeriod`/`pedalPeriod` (skill-scaled tap cadence),
+  the 0.85 hold-solid and 0.05 re-press thresholds. The AI's front-wheel
+  visuals follow `race.aiSteer` in main.js — don't hardcode them straight.
 - Feel changes (steering, physics, camera) get committed only after Jason
   playtests in his browser and confirms.
 
