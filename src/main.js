@@ -436,6 +436,7 @@ function buildRaceScene(opp) {
   race.aiFinishedAt = null;
   race.lastBeep = 4;
   race.steer = 0;
+  race.aiSteer = 0;
   race.prevSpeed = 0;
   race.accelSm = 0;
   race.camSpeed = 0;
@@ -480,6 +481,7 @@ function raceTick(t, dt) {
     p.step(dt, thr, brk, steer);
     const ctrl = race.driver.drive(dt, race.time - race.goTime, p.trackDist);
     ai.step(dt, ctrl.throttle, ctrl.brake, ctrl.steer);
+    race.aiSteer = ctrl.steer;
     resolveContact(p, ai, dt);
 
     if (ai.finished && race.aiFinishedAt === null) race.aiFinishedAt = race.time;
@@ -491,6 +493,7 @@ function raceTick(t, dt) {
     // race over: coast
     p.step(dt, 0, 0.3, 0);
     ai.step(dt, 0, 0.3, 0);
+    race.aiSteer += (0 - race.aiSteer) * Math.min(1, dt * 9);
   }
 
   // ----- meshes -----
@@ -504,7 +507,7 @@ function raceTick(t, dt) {
     const wheels = mesh.userData.wheels;
     const spin = sim.speed * dt / mesh.userData.wheelR;
     for (let i = 0; i < 4; i++) wheels[i].rotation.x += spin;
-    const steerAng = sim === p ? steer * 0.35 : 0;
+    const steerAng = (sim === p ? steer : race.aiSteer) * 0.35;
     wheels[0].rotation.y = steerAng; wheels[1].rotation.y = steerAng;
   }
 
