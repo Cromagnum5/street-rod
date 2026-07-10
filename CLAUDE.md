@@ -33,7 +33,12 @@ sound is synthesized live with the Web Audio API.
   `fifties`, `muscle`) from boxes/cylinders + a `wedge()` prism helper.
   Returns a Group facing +Z with `userData.wheels` for spin/steer and
   `userData.body`, the sprung-body sub-group that suspension roll/pitch
-  rotates while the wheels stay planted on the road.
+  rotates while the wheels stay planted on the road. Prewar cars (Model A
+  + Deuce share `buildPrewar`) are fenderless hot rods with an exposed
+  solid rear axle (Jason's call, 2026-07-10): unsprung parts like that
+  axle go on the **root** group, not the body, so they stay level with
+  the wheels. The prewar trunk is deliberately raised (bottom y≈0.58) —
+  lower it and it swallows the axle, which sits at wheel-center height.
 - `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
@@ -92,6 +97,14 @@ send key events, assert on HUD/menu DOM, screenshot and read the PNGs to
 check visuals. `page.on("pageerror")` must stay empty. Quick syntax check:
 `npx esbuild --bundle src/main.js --outfile=/dev/null --format=esm
 --alias:three=./lib/three.module.js`.
+
+For car-mesh visual checks, don't squint at dark garage screenshots: load
+the game page in headless chromium, then `page.evaluate` a dynamic
+`import("./src/carmesh.js")` (the importmap is already live), build the car
+into a fresh scene on a gray background with your own camera/lights, and
+screenshot that. Dead-rear + broadside + rear-3/4 views catch geometry
+that's technically present but visually hidden. The garage turntable spins
+at 0.35 rad/s (~18 s/rev) if you do need in-game angles.
 
 For physics/balance questions, skip the browser: bundle a Node script that
 imports `physics.js` (and `Track` if needed) with the same esbuild
