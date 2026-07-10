@@ -448,7 +448,7 @@ function buildRaceScene(opp) {
   camera.fov = 62; camera.updateProjectionMatrix();
   // drop the camera behind the start line
   const s0 = track.sample(0);
-  camera.position.set(s0.pos.x - Math.sin(s0.heading) * 10, 4, s0.pos.z - Math.cos(s0.heading) * 10);
+  camera.position.set(s0.pos.x - Math.sin(s0.heading) * 7, 3, s0.pos.z - Math.cos(s0.heading) * 7);
 
   sceneTick = raceTick;
 }
@@ -513,8 +513,8 @@ function raceTick(t, dt) {
   // framing follows a smoothed speed, extra slow once the race is over, so
   // braking to a stop past the finish line doesn't rubber-band the camera
   race.camSpeed += (p.speed - race.camSpeed) * Math.min(1, dt * (race.over ? 1.0 : 6));
-  const dist = 8.5 + race.camSpeed * 0.025;
-  const camGoal = new THREE.Vector3(p.x - fx * dist, 3.2 + race.camSpeed * 0.008, p.z - fz * dist);
+  const dist = 4.3 + race.camSpeed * 0.013;
+  const camGoal = new THREE.Vector3(p.x - fx * dist, 2.15 + race.camSpeed * 0.004, p.z - fz * dist);
   camera.position.lerp(camGoal, 1 - Math.exp(-dt * 5));
   camera.lookAt(p.x + fx * 7, 1.1, p.z + fz * 7);
   // gentle widening with speed; the drama comes from a small acceleration kick
