@@ -71,6 +71,9 @@ function addWheels(group, spec) {
     [-trackW / 2, -wheelBase / 2], [trackW / 2, -wheelBase / 2],
   ]) {
     const w = wheel(wheelR, wheelW, whitewall);
+    // steer yaw (y) must wrap the accumulated spin (x), or the spin angle
+    // tumbles the yawed wheel and the fronts wobble once per revolution
+    w.rotation.order = "YXZ";
     w.position.set(x, wheelR, z);
     group.add(w);
     wheels.push(w);
