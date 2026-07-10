@@ -1,0 +1,79 @@
+# STREET ROD '86 — project notes for Claude
+
+Browser 3D driving game homaging the C64/DOS classic *Street Rod*. Chase-cam
+racing against AI for cash wagers, with pink-slip boss races (win their
+next-tier car / lose yours). Verified working in Chrome (July 2026).
+
+## Running it
+
+No build step, no dependencies to install. ES modules require HTTP:
+
+```sh
+python3 -m http.server 8000    # from repo root, then open localhost:8000
+```
+
+Three.js 0.160 is vendored at `lib/three.module.js` and mapped via an
+importmap in `index.html` (`import * as THREE from "three"`). Keep it that
+way — the game must stay fully offline/self-contained: **no CDN scripts, no
+downloaded 3D models, no audio files**. Cars are procedural meshes, engine
+sound is synthesized live with the Web Audio API.
+
+## Architecture (~1,900 lines, plain ES modules)
+
+- `index.html` — all CSS + DOM for HUD/menus (retro amber/pink terminal look),
+  importmap, loads `src/main.js`.
+- `src/main.js` — state machine (`TITLE → GARAGE ⇄ OPPONENTS → RACE →
+  RESULTS`), renderer, chase camera, race loop, economy, localStorage save
+  (`SAVE_KEY` in data.js). States are objects with `enter/exit/onKey`;
+  per-frame work goes through the module-level `sceneTick` callback.
+- `src/data.js` — all balance data: `CAR_TIERS` (7-car pink-slip ladder,
+  Model A → Hemi 'Cuda), `PARTS` (5 categories × 3 buyable levels), racer
+  names/flavor, `BOSSES` ladder.
+- `src/carmesh.js` — procedural car builder; three era styles (`prewar`,
+  `fifties`, `muscle`) from boxes/cylinders + a `wedge()` prism helper.
+  Returns a Group facing +Z with `userData.wheels` for spin/steer.
+- `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
+  mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
+  math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
+  hint)`.
+- `src/physics.js` — `CarSim`: scalar speed + heading, traction-limited
+  launch, drag-limited top speed, grip-capped steering with speed scrub,
+  automatic gearbox (RPM drives the audio). `effectiveStats(tier, parts)`
+  merges base car + part multipliers.
+- `src/ai.js` — pure-pursuit steering to a lookahead point, corner-speed
+  planning from curvature, skill-scaled reaction delay, light rubber band.
+- `src/audio.js` — `EngineVoice`: firing frequency = rpm/60 × cyl/2 into a
+  saw stack + sub square, throttle-keyed exhaust noise, lowpass opened by RPM
+  and exhaust upgrades, turbo/supercharger whine. Requires a user gesture
+  first (title screen Enter calls `audioContext()`).
+
+## Design intent (from Jason — keep these)
+
+- Physics stay **relaxing/forgiving**: no hard walls, no spinouts, off-road
+  slows but doesn't punish, losing AI gets a mild rubber band.
+- Upgrades must be **audible**, not just faster (that's why audio is synth).
+- Bosses are **pink** (pink card, pink-painted car) and pink-slip only.
+- A broke player must never soft-lock — `makeRoster()` injects a $0 "pride
+  run" opponent when cash < $25.
+- Balance target: stock car beats 1–2★ racers, upgrades needed for 4–5★,
+  near-maxed car beats the boss. Street racers run near-stock (`aiParts()`),
+  bosses get built machines.
+
+## Testing
+
+Headless smoke test pattern that works on this machine: playwright-core
+(npm-install it in the scratchpad, not here) driving the cached chromium at
+`~/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell`
+with args `--use-gl=swiftshader --enable-unsafe-swiftshader`. Serve the repo,
+send key events, assert on HUD/menu DOM, screenshot and read the PNGs to
+check visuals. `page.on("pageerror")` must stay empty. Quick syntax check:
+`npx esbuild --bundle src/main.js --outfile=/dev/null --format=esm
+--alias:three=./lib/three.module.js`.
+
+## Gotchas
+
+- `/home/cromulon` briefly had a stray commit-less `.git` (deleted
+  2026-07-10). If `git add -A` ever stages home-dir files again, stop —
+  wrong repo root.
+- Commit messages: repo history starts at `2e79ae4`; branch is `main`.
+- A dev server from an earlier session may still be running on port 8471.
