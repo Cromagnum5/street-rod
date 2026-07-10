@@ -100,6 +100,16 @@ sound is synthesized live with the Web Audio API.
   Knobs in `ai.js`: `tapPeriod`/`pedalPeriod` (skill-scaled tap cadence),
   the 0.85 hold-solid and 0.05 re-press thresholds. The AI's front-wheel
   visuals follow `race.aiSteer` in main.js — don't hardcode them straight.
+- AI launch (Jason's call, 2026-07-10, `a61b180`): the AI holds full
+  throttle from the green — the skill-scaled `reaction` delay in `ai.js`
+  gates only the steering/corner-planning brain, never the launch (it used
+  to return throttle 0, which audibly dropped the engine to idle right at
+  GO). During the countdown the AI stabs random rev blips (`race.aiRev` /
+  `race.aiRevT` state machine in main.js: 0.15–0.4s on, 0.15–0.65s off,
+  fast rpm attack + slow fall-off is what reads "angry"), then pins full
+  rev for the last 1.2s into the launch. Balance note: launches no longer
+  stagger by skill — if 1–2★ racers ever feel too strong off the line,
+  reintroduce a small stagger via partial (not zero) pre-reaction throttle.
 - Feel changes (steering, physics, camera) get committed only after Jason
   playtests in his browser and confirms.
 
