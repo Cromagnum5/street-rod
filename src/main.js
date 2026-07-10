@@ -231,7 +231,7 @@ function renderGaragePanel() {
       <div class="pName">${PARTS[key].label}<span class="pips">${pips}</span></div>
       <div class="pLevel">${PARTS[key].levels[cur].n}</div>
       ${next
-        ? `<div class="pNext">&rarr; ${next.n} &mdash; $${next.price}${player.money < next.price ? ' <span style="color:#c66">(short on cash)</span>' : ""}</div>`
+        ? `<div class="pNext">&rarr; ${next.n} &mdash; $${next.price}${player.money < next.price ? ' <span class="short">(short on cash)</span>' : ""}</div>`
         : `<div class="pMax">MAXED OUT</div>`}`;
     row.onclick = () => { garageSel = i; renderGaragePanel(); };
     list.appendChild(row);
@@ -241,13 +241,18 @@ function renderGaragePanel() {
   const hp = Math.round(stats.power / 745.7);
   const vmax = Math.round(topSpeed(stats) * 2.23694);
   const nextBoss = player.carTier < 6 ? BOSSES[player.carTier].name : null;
+  const statRows = [
+    ["POWER", `${hp} hp`],
+    ["TOP SPEED", `~${vmax} mph`],
+    ["GRIP", `${stats.cornerGrip.toFixed(1)} g-units`],
+    ["BODY LEAN", `~${(stats.softness * ROLL_MAX * 57.3).toFixed(1)}&deg;`],
+    ["GEARS", `${stats.gears}-speed`],
+  ];
   el("garageStats").innerHTML =
-    `POWER &nbsp;${hp} hp<br>TOP SPEED &nbsp;~${vmax} mph<br>GRIP &nbsp;${stats.cornerGrip.toFixed(1)} g-units<br>` +
-    `BODY LEAN &nbsp;~${(stats.softness * ROLL_MAX * 57.3).toFixed(1)}&deg;<br>` +
-    `GEARS &nbsp;${stats.gears}-speed<br><br>` +
+    statRows.map(([l, v]) => `<div class="statRow"><span class="sLabel">${l}</span><span class="sVal">${v}</span></div>`).join("") +
     (nextBoss
-      ? `<span style="color:#ff4fa3">NEXT BOSS: ${nextBoss}</span>`
-      : `<span style="color:#ffb000">YOU HOLD THE CROWN &#128081;</span>`);
+      ? `<div class="statNote boss">NEXT BOSS: ${nextBoss}</div>`
+      : `<div class="statNote">YOU HOLD THE CROWN &#128081;</div>`);
 }
 
 // ---------------------------------------------------------------- OPPONENTS
@@ -320,7 +325,7 @@ function cardHTML(opp) {
     <div class="oppCar">${carName}</div>
     <div class="oppFlavor">&ldquo;${opp.flavor}&rdquo;</div>
     <div class="oppStats">
-      <div>SKILL <span class="stars">${"&#9733;".repeat(stars)}${"&#9734;".repeat(5 - stars)}</span></div>
+      <div>SKILL <span class="stars"><span class="lit">${"&#9733;".repeat(stars)}</span>${"&#9734;".repeat(5 - stars)}</span></div>
       ${opp.boss
         ? `<div class="pinkslip">&#9825; PINK SLIP RACE &#9825;</div>
            <div class="warn">Win: you drive home in the ${CAR_TIERS[opp.carTier].short}.<br>Lose: you hand over YOUR keys.</div>`
@@ -446,6 +451,7 @@ function buildRaceScene(opp) {
   el("hudMoney").textContent = `CASH $${player.money}`;
   el("hudWager").textContent = opp.boss ? "♡ PINK SLIP RACE ♡"
     : opp.wager === 0 ? `PRIDE RUN — $${opp.prize ?? 0}` : `WAGER $${opp.wager}`;
+  el("hudWager").classList.toggle("boss", !!opp.boss);
   el("centerMsg").textContent = "";
 
   camera.fov = 62; camera.updateProjectionMatrix();
@@ -554,7 +560,6 @@ function raceTick(t, dt) {
   tachoSegs.forEach((s, i) => s.classList.toggle("on", rpmFrac * 12 > i));
   const ahead = p.trackDist >= ai.trackDist;
   el("position").textContent = race.countdown > 0 ? "" : ahead ? "1st" : "2nd";
-  el("position").style.color = ahead ? "#4dff70" : "#ff8855";
   el("dotPlayer").style.left = `${Math.min(100, p.trackDist / race.track.length * 100)}%`;
   el("dotAI").style.left = `${Math.min(100, ai.trackDist / race.track.length * 100)}%`;
 }

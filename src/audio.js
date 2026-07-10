@@ -205,5 +205,21 @@ export function loseSound() {
   setTimeout(() => beep(150, 0.5, "sawtooth", 0.14), 380);
 }
 
-export function uiTick() { beep(660, 0.05, "square", 0.06); }
-export function uiSelect() { beep(880, 0.08, "square", 0.09); }
+export function click(vol = 0.5, freq = 3000, dur = 0.03) {
+  const c = audioContext();
+  const n = Math.ceil(c.sampleRate * dur);
+  const buf = c.createBuffer(1, n, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const f = c.createBiquadFilter();
+  f.type = "bandpass"; f.frequency.value = freq; f.Q.value = 1.5;
+  const g = c.createGain();
+  g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(c.destination);
+  src.start();
+}
+
+export function uiTick() { click(0.5, 3000, 0.025); }
+export function uiSelect() { click(0.8, 1800, 0.045); }

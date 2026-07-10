@@ -20,8 +20,11 @@ sound is synthesized live with the Web Audio API.
 
 ## Architecture (~1,900 lines, plain ES modules)
 
-- `index.html` — all CSS + DOM for HUD/menus (retro amber/pink terminal look),
-  importmap, loads `src/main.js`.
+- `index.html` — all CSS + DOM for HUD/menus (monochrome technical-catalog
+  theme, mcmaster.com inverted: black paper, white ink, gray hairline rules,
+  Helvetica, no glows/shadows; pink stays reserved for boss/pink-slip
+  markers. HUD elements each carry a translucent black plate + hairline
+  border for contrast over the 3D scene), importmap, loads `src/main.js`.
 - `src/main.js` — state machine (`TITLE → GARAGE ⇄ OPPONENTS → RACE →
   RESULTS`), renderer, chase camera, race loop, economy, localStorage save
   (`SAVE_KEY` in data.js). States are objects with `enter/exit/onKey`;

@@ -5,15 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STREET ROD '86</title>
 <style>
+  /* Monochrome technical-catalog theme (mcmaster.com, inverted):
+     black paper, white ink, gray hairline rules. Two accents only:
+     pink for boss / pink-slip markers, gold for earned things
+     (skill stars, owned upgrade pips). Everything else stays grayscale. */
   :root {
+    --ink: #ffffff;
+    --dim: #9a9a9a;
+    --faint: #5a5a5a;
+    --rule: #333333;
+    --rule-strong: #7a7a7a;
+    --paper: rgba(0, 0, 0, 0.86);
     --pink: #ff4fa3;
-    --amber: #ffb000;
-    --green: #4dff70;
-    --panel: rgba(10, 8, 20, 0.88);
+    --gold: #ffb000;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-  body { font-family: "Courier New", ui-monospace, monospace; color: #eee; user-select: none; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px; color: var(--ink); user-select: none;
+    font-variant-numeric: tabular-nums;
+  }
   #game { position: fixed; inset: 0; }
   canvas { display: block; }
 
@@ -22,107 +34,138 @@
 
   /* ---------- HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; }
+  /* HUD instruments sit on the 3D scene, so each carries its own black plate */
   #hud .speedo {
     position: absolute; right: 24px; bottom: 20px; text-align: right;
-    text-shadow: 0 0 8px rgba(255,176,0,.7);
+    background: rgba(0, 0, 0, 0.75); border: 1px solid var(--rule-strong); padding: 8px 12px 6px;
   }
-  #speed { font-size: 64px; font-weight: bold; color: var(--amber); line-height: 1; }
-  #speedUnit { font-size: 16px; color: #c98d00; letter-spacing: 3px; }
-  #gear { position: absolute; right: 24px; bottom: 110px; font-size: 28px; color: #fff; }
+  #speed { font-size: 60px; font-weight: 700; line-height: 1; }
+  #speedUnit { font-size: 11px; color: var(--dim); letter-spacing: 3px; margin-top: 2px; }
+  #gear {
+    position: absolute; right: 24px; bottom: 118px; font-size: 14px;
+    letter-spacing: 1px; border: 1px solid var(--rule-strong); padding: 4px 9px;
+    background: rgba(0, 0, 0, 0.75);
+  }
   #tacho {
-    position: absolute; left: 24px; bottom: 24px; width: 220px; height: 18px;
-    border: 2px solid #555; background: #111; display: flex; gap: 2px; padding: 2px;
+    position: absolute; left: 24px; bottom: 24px; width: 220px; height: 16px;
+    border: 1px solid var(--rule-strong); background: #000; display: flex; gap: 2px; padding: 2px;
   }
-  #tacho .seg { flex: 1; background: #222; }
-  #tacho .seg.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  #tacho .seg.on.hot { background: #ff3b3b; box-shadow: 0 0 6px #ff3b3b; }
-  #raceInfo { position: absolute; top: 18px; left: 0; right: 0; text-align: center; font-size: 20px; letter-spacing: 2px; }
-  #position { font-size: 34px; color: var(--amber); text-shadow: 0 0 10px rgba(255,176,0,.6); }
+  /* the tacho keeps functional green/yellow/red bands (Jason's call) */
+  #tacho .seg { flex: 1; background: #1e1e1e; }
+  #tacho .seg.hot { background: repeating-linear-gradient(135deg, #1e1e1e 0 3px, #3a3a3a 3px 6px); }
+  #tacho .seg.on { background: #4dff70; }
+  #tacho .seg.on:nth-child(n+9) { background: #ffe14a; }
+  #tacho .seg.on.hot { background: #ff3b3b; }
+  #raceInfo { position: absolute; top: 14px; left: 0; right: 0; text-align: center; font-size: 15px; letter-spacing: 2px; }
+  #position {
+    display: inline-block; font-size: 26px; font-weight: 700; padding: 2px 16px;
+    background: rgba(0, 0, 0, 0.75); border: 1px solid var(--rule-strong);
+  }
+  #position:empty { display: none; }
   #progress {
-    position: absolute; top: 76px; left: 50%; transform: translateX(-50%);
-    width: 420px; height: 10px; border: 2px solid #555; background: #111;
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    width: 420px; height: 8px; border: 1px solid var(--rule-strong); background: #000;
   }
-  #progress .dot { position: absolute; top: -5px; width: 14px; height: 14px; border-radius: 50%; margin-left: -7px; }
-  #dotPlayer { background: var(--green); box-shadow: 0 0 8px var(--green); z-index: 2; }
-  #dotAI { background: #ff5555; box-shadow: 0 0 8px #ff5555; }
+  #progress .dot { position: absolute; top: -4px; width: 12px; height: 14px; margin-left: -6px; }
+  #dotPlayer { background: var(--ink); z-index: 2; }
+  #dotAI { background: #000; border: 2px solid var(--ink); }
   #centerMsg {
-    position: absolute; top: 34%; left: 0; right: 0; text-align: center;
-    font-size: 84px; font-weight: bold; color: #fff; text-shadow: 0 0 24px var(--pink);
-    letter-spacing: 8px;
+    position: absolute; top: 34%; left: 0; right: 0; width: fit-content; margin: 0 auto;
+    text-align: center; font-size: 76px; font-weight: 700; letter-spacing: 6px;
+    padding: 2px 32px; background: rgba(0, 0, 0, 0.8); border: 1px solid var(--rule-strong);
   }
-  #hudMoney { position: absolute; top: 18px; left: 24px; font-size: 20px; color: var(--green); }
-  #hudWager { position: absolute; top: 18px; right: 24px; font-size: 20px; color: var(--pink); }
+  #centerMsg:empty { display: none; }
+  #hudMoney {
+    position: absolute; top: 18px; left: 24px; font-size: 14px; letter-spacing: 1px;
+    padding: 5px 10px; background: rgba(0, 0, 0, 0.75); border: 1px solid var(--rule-strong);
+  }
+  #hudWager {
+    position: absolute; top: 18px; right: 24px; font-size: 14px; letter-spacing: 1px;
+    padding: 5px 10px; background: rgba(0, 0, 0, 0.75); border: 1px solid var(--rule-strong);
+  }
+  #hudWager.boss { color: var(--pink); }
 
   /* ---------- Menus ---------- */
   .panel {
-    background: var(--panel); border: 3px solid var(--amber); padding: 28px 40px;
-    box-shadow: 0 0 40px rgba(255, 176, 0, .25), inset 0 0 60px rgba(0,0,0,.6);
-    max-width: 720px; pointer-events: auto;
+    background: var(--paper); border: 1px solid var(--rule-strong);
+    padding: 28px 40px; max-width: 720px; pointer-events: auto;
   }
-  h1.title {
-    font-size: 62px; color: var(--amber); letter-spacing: 6px;
-    text-shadow: 3px 3px 0 #7a2c00, 0 0 30px rgba(255,140,0,.8); text-align: center;
+  h1.title { font-size: 46px; font-weight: 700; letter-spacing: 2px; text-align: center; }
+  .subtitle {
+    text-align: center; color: var(--dim); font-size: 12px; letter-spacing: 4px;
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule);
   }
-  h1.title span { color: var(--pink); text-shadow: 3px 3px 0 #6b0038, 0 0 30px rgba(255,79,163,.8); }
-  .subtitle { text-align: center; color: #999; letter-spacing: 3px; margin-top: 6px; }
-  .hint { color: #888; font-size: 14px; margin-top: 18px; text-align: center; letter-spacing: 1px; }
-  .hint b { color: #ddd; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 18px; text-align: center; letter-spacing: .5px; }
+  .hint b { color: var(--ink); font-weight: 600; }
   .blink { animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 
   /* ---------- Garage ---------- */
   #garagePanel {
     position: fixed; left: 24px; top: 24px; bottom: 24px; width: 380px;
-    background: var(--panel); border: 3px solid #444; padding: 20px;
+    background: var(--paper); border: 1px solid var(--rule-strong); padding: 20px;
     display: flex; flex-direction: column; pointer-events: auto;
   }
-  #garagePanel h2 { color: var(--amber); letter-spacing: 3px; font-size: 22px; }
-  #garageCarName { color: #fff; font-size: 17px; margin: 6px 0 2px; }
-  #garageMoney { color: var(--green); font-size: 19px; margin-bottom: 14px; }
-  .partRow { padding: 9px 10px; margin: 3px 0; border: 2px solid transparent; cursor: pointer; }
-  .partRow.sel { border-color: var(--amber); background: rgba(255,176,0,.08); }
-  .partRow .pName { color: #ddd; font-size: 15px; }
-  .partRow .pLevel { color: var(--amber); font-size: 13px; }
-  .partRow .pNext { color: #7fbf7f; font-size: 13px; }
-  .partRow .pMax { color: #666; font-size: 13px; }
-  .pips { display: inline-block; margin-left: 8px; letter-spacing: 2px; color: var(--green); }
-  .pips .off { color: #333; }
-  #garageStats { margin-top: auto; border-top: 1px solid #333; padding-top: 10px; font-size: 13px; color: #9ad; line-height: 1.7; }
-  #garageHint { position: fixed; bottom: 26px; left: 0; right: 0; text-align: center; color: #888; font-size: 14px; letter-spacing: 1px; }
-  #garageHint b { color: #ddd; }
+  #garagePanel h2 {
+    font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    border-bottom: 1px solid var(--rule-strong); padding-bottom: 10px;
+  }
+  #garageCarName { font-size: 14px; font-weight: 600; margin: 10px 0 2px; }
+  #garageMoney { font-size: 13px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); }
+  .partRow { padding: 9px 10px; border-bottom: 1px solid var(--rule); cursor: pointer; }
+  .partRow:hover { background: #121212; }
+  .partRow .pName { color: var(--ink); font-size: 13px; font-weight: 600; }
+  .partRow .pLevel { color: var(--dim); font-size: 12px; margin-top: 1px; }
+  .partRow .pNext { color: var(--ink); font-size: 12px; margin-top: 1px; }
+  .partRow .pMax { color: var(--faint); font-size: 12px; margin-top: 1px; }
+  .pips { display: inline-block; float: right; letter-spacing: 3px; color: var(--gold); font-size: 11px; }
+  .pips .off { color: var(--rule); }
+  .short { color: var(--dim); font-style: italic; }
+  .partRow.sel { background: #2a2a2a; }
+  #garageStats { margin-top: auto; border-top: 1px solid var(--rule-strong); padding-top: 4px; font-size: 12px; }
+  .statRow { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--rule); }
+  .statRow .sLabel { color: var(--dim); letter-spacing: 1px; }
+  .statRow .sVal { color: var(--ink); }
+  .statNote { padding-top: 10px; font-size: 12px; letter-spacing: 1px; }
+  .statNote.boss { color: var(--pink); }
+  #garageHint { position: fixed; bottom: 26px; left: 0; right: 0; text-align: center; color: var(--dim); font-size: 12px; letter-spacing: .5px; }
+  #garageHint b { color: var(--ink); font-weight: 600; }
 
   /* ---------- Opponent cards ---------- */
   #cardStage { position: relative; width: 460px; height: 480px; perspective: 900px; }
   .oppCard {
-    position: absolute; inset: 0; background: var(--panel); border: 3px solid #567;
+    position: absolute; inset: 0; background: var(--paper); border: 1px solid var(--rule-strong);
     padding: 26px; transition: transform .28s ease, opacity .28s ease;
     display: flex; flex-direction: column; pointer-events: auto;
   }
-  .oppCard.boss { border-color: var(--pink); box-shadow: 0 0 50px rgba(255,79,163,.45); background: rgba(35, 6, 24, .92); }
-  .oppCard .oppName { font-size: 30px; color: #fff; letter-spacing: 2px; }
-  .oppCard.boss .oppName { color: var(--pink); text-shadow: 0 0 12px rgba(255,79,163,.8); }
-  .oppCard .oppCar { font-size: 18px; color: var(--amber); margin-top: 8px; }
-  .oppCard .oppFlavor { font-style: italic; color: #aaa; margin-top: 14px; font-size: 15px; line-height: 1.5; }
-  .oppCard .oppStats { margin-top: auto; font-size: 16px; line-height: 2; }
-  .oppCard .stars { color: var(--amber); letter-spacing: 3px; }
-  .oppCard .wager { color: var(--green); font-size: 22px; }
-  .oppCard .pinkslip {
-    color: var(--pink); font-size: 24px; font-weight: bold; letter-spacing: 3px;
-    text-shadow: 0 0 14px rgba(255,79,163,.9);
+  .oppCard.boss { border-color: var(--pink); }
+  .oppCard .oppName { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
+  .oppCard.boss .oppName { color: var(--pink); }
+  .oppCard .oppCar {
+    font-size: 13px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase;
+    margin-top: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--rule);
   }
-  .oppCard .warn { color: #ff8a8a; font-size: 13px; margin-top: 6px; }
+  .oppCard .oppFlavor { font-style: italic; color: var(--dim); margin-top: 14px; font-size: 14px; line-height: 1.6; }
+  .oppCard .oppStats { margin-top: auto; font-size: 14px; line-height: 2; border-top: 1px solid var(--rule); padding-top: 10px; }
+  .oppCard .stars { color: var(--ink); letter-spacing: 3px; }
+  .oppCard .stars .lit { color: var(--gold); }
+  .oppCard .wager { color: var(--ink); font-weight: 700; font-size: 18px; }
+  .oppCard .pinkslip { color: var(--pink); font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+  .oppCard .warn { color: var(--dim); font-size: 12px; margin-top: 6px; line-height: 1.5; }
   .cardOffL { transform: translateX(-560px) rotateY(35deg); opacity: 0; }
   .cardOffR { transform: translateX(560px) rotateY(-35deg); opacity: 0; }
-  #cardCounter { margin-top: 16px; color: #888; letter-spacing: 4px; }
-  .arrows { position: absolute; top: 50%; font-size: 46px; color: #666; }
-  #arrL { left: -70px; } #arrR { right: -70px; }
+  #cardCounter { margin-top: 16px; color: var(--dim); letter-spacing: 4px; font-size: 12px; }
+  .arrows { position: absolute; top: 50%; font-size: 34px; color: var(--faint); }
+  #arrL { left: -60px; } #arrR { right: -60px; }
 
   /* ---------- Results ---------- */
-  #resultTitle { font-size: 58px; text-align: center; letter-spacing: 6px; }
-  #resultTitle.win { color: var(--green); text-shadow: 0 0 30px rgba(77,255,112,.7); }
-  #resultTitle.lose { color: #ff4444; text-shadow: 0 0 30px rgba(255,68,68,.7); }
-  #resultBody { text-align: center; font-size: 19px; margin-top: 18px; line-height: 1.9; color: #ccc; }
-  #resultBody .money { color: var(--green); } #resultBody .pink { color: var(--pink); }
+  #resultTitle {
+    font-size: 42px; font-weight: 700; text-align: center; letter-spacing: 3px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--rule);
+  }
+  #resultBody { text-align: center; font-size: 15px; margin-top: 16px; line-height: 1.9; color: var(--dim); }
+  #resultBody .money { color: var(--ink); font-weight: 700; }
+  #resultBody .pink { color: var(--pink); }
 </style>
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
@@ -148,7 +191,7 @@
   <div class="panel" style="text-align:center">
     <h1 class="title">STREET <span>ROD</span> '86</h1>
     <div class="subtitle">CRUISE &bull; WRENCH &bull; RACE FOR PINKS</div>
-    <div class="hint" style="margin-top:34px; font-size:17px" id="titleHint"><span class="blink">PRESS ENTER TO START YOUR ENGINE</span></div>
+    <div class="hint" style="margin-top:30px; font-size:13px; letter-spacing:2px" id="titleHint"><span class="blink">PRESS ENTER TO START YOUR ENGINE</span></div>
     <div class="hint">drive with <b>ARROWS / WASD</b> &nbsp;&bull;&nbsp; gas: <b>&uarr; / W / CTRL</b> &nbsp;&bull;&nbsp; sound on &#128266;</div>
   </div>
 </div>
