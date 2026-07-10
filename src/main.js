@@ -435,6 +435,8 @@ function buildRaceScene(opp) {
   race.aiFinishedAt = null;
   race.lastBeep = 4;
   race.steer = 0;
+  race.prevSpeed = 0;
+  race.accelSm = 0;
 
   el("hudMoney").textContent = `CASH $${player.money}`;
   el("hudWager").textContent = opp.boss ? "♡ PINK SLIP RACE ♡"
@@ -502,11 +504,17 @@ function raceTick(t, dt) {
 
   // ----- chase camera -----
   const fx = Math.sin(p.heading), fz = Math.cos(p.heading);
-  const dist = 8.5 + p.speed * 0.04;
-  const camGoal = new THREE.Vector3(p.x - fx * dist, 3.2 + p.speed * 0.012, p.z - fz * dist);
+  const dist = 8.5 + p.speed * 0.025;
+  const camGoal = new THREE.Vector3(p.x - fx * dist, 3.2 + p.speed * 0.008, p.z - fz * dist);
   camera.position.lerp(camGoal, 1 - Math.exp(-dt * 5));
   camera.lookAt(p.x + fx * 7, 1.1, p.z + fz * 7);
-  const fovGoal = 60 + Math.min(22, p.speed * 0.28);
+  // gentle widening with speed; the drama comes from a small acceleration kick
+  // (zoom-out surge on launch/passing, slight tighten under braking)
+  const accel = (p.speed - race.prevSpeed) / Math.max(dt, 1e-4);
+  race.prevSpeed = p.speed;
+  race.accelSm += (accel - race.accelSm) * Math.min(1, dt * 4);
+  const kick = race.accelSm > 0 ? Math.min(6, race.accelSm * 0.7) : Math.max(-3, race.accelSm * 0.25);
+  const fovGoal = 60 + Math.min(9, p.speed * 0.11) + kick;
   camera.fov += (fovGoal - camera.fov) * Math.min(1, dt * 3);
   camera.updateProjectionMatrix();
 
