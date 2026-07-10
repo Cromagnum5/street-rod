@@ -180,10 +180,10 @@ export class Track {
     }
 
     // Start + finish banners
-    for (const d of [8, this.length - 4]) this._banner(scene, d, d > 100 ? "FINISH" : "START");
+    for (const d of [8, this.length - 4]) this._banner(scene, d);
   }
 
-  _banner(scene, d, text) {
+  _banner(scene, d) {
     const { pos, heading } = this.sample(d);
     const nx = Math.cos(heading), nz = -Math.sin(heading);
     const g = new THREE.Group();
@@ -201,12 +201,6 @@ export class Track {
       c.fillStyle = (i + j) % 2 ? "#111" : "#eee";
       c.fillRect(i * 16, j * 16, 16, 16);
     }
-    c.fillStyle = "rgba(200,30,30,.85)";
-    c.fillRect(96, 12, 320, 40);
-    c.fillStyle = "#fff";
-    c.font = "bold 34px monospace";
-    c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText(text, 256, 32);
     const tex = new THREE.CanvasTexture(cv);
     const banner = new THREE.Mesh(
       new THREE.PlaneGeometry((ROAD_HALF_W + 0.6) * 2, 1.4),
