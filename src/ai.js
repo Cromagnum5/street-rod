@@ -22,7 +22,9 @@ export class AIDriver {
     if (raceTime < this.reaction) return { throttle: 0, brake: 0, steer: 0 };
 
     // --- speed planning: slowest corner in the next few seconds ---
-    const grip = car.stats.grip * (0.72 + 0.26 * this.skill);
+    // cornerGrip folds in the steady-state body-roll penalty, so soft-sprung
+    // AI plans slower corners instead of understeering off the road
+    const grip = (car.stats.cornerGrip ?? car.stats.grip) * (0.72 + 0.26 * this.skill);
     let targetSpeed = car.vmax * (0.82 + 0.18 * this.skill);
     for (let ahead = 15; ahead <= 25 + car.speed * 2.2; ahead += 20) {
       const k = this.track.curvatureAt(car.trackDist + ahead);

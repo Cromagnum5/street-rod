@@ -7,6 +7,19 @@ import { PARTS, PART_KEYS } from "./data.js";
 export const IDLE_RPM = 850;
 export const REDLINE = 5800;
 
+// Suspension: the body is a spring-damper chasing chassis acceleration.
+// Softness ~1 (stock old iron) leans hard and wobbles; ~0.15 (race) sits flat.
+export const ROLL_MAX = 0.11;   // rad of body roll at the grip limit, softness 1
+const PITCH_MAX = 0.055;        // rad of squat/dive per g of longitudinal accel, softness 1
+const ROLL_GRIP_LOSS = 1.1;     // grip fraction lost per rad of roll (load transfer)
+const ROLL_GRIP_LOSS_CAP = 0.15; // forgiving: never lose more than 15%
+
+// Steady-state cornering grip once body roll has set in — what the car can
+// actually hold mid-corner. Used by the AI's corner-speed planner too.
+export function suspensionGripFactor(softness) {
+  return 1 - Math.min(ROLL_GRIP_LOSS_CAP, ROLL_GRIP_LOSS * ROLL_MAX * softness);
+}
+
 // Combine a tier's base stats with owned part levels into effective numbers.
 export function effectiveStats(tier, partLevels) {
   let powerMult = 1, gripMult = 1;
@@ -16,11 +29,16 @@ export function effectiveStats(tier, partLevels) {
     if (PARTS[key].affects === "grip") gripMult *= lvl.mult;
   }
   const gb = PARTS.gearbox.levels[partLevels.gearbox ?? 0];
+  const susp = PARTS.suspension.levels[partLevels.suspension ?? 0];
+  const softness = (tier.susp ?? 1) * susp.softness;
+  const grip = tier.grip * gripMult;
   return {
     power: tier.power * powerMult,
     mass: tier.mass,
     drag: tier.drag,
-    grip: tier.grip * gripMult,
+    grip,
+    softness,
+    cornerGrip: grip * suspensionGripFactor(softness),
     gears: tier.gears + (partLevels.gearbox >= 2 ? 1 : 0),
     shiftTime: gb.shiftTime,
     cyl: tier.cyl,
@@ -57,6 +75,12 @@ export class CarSim {
     this.screech = 0;       // 0..1, for skid sound + effects
     this.offroad = false;
     this.finished = false;
+
+    // body attitude (rad) in mesh-rotation convention: roll + raises the car's
+    // left (+X) side, pitch + is nose-down. Purely visual state except that
+    // roll feeds back into available grip (load transfer).
+    this.roll = 0; this.rollVel = 0;
+    this.pitch = 0; this.pitchVel = 0;
 
     this.vmax = topSpeed(stats);
     // gear speed bands: geometric-ish spread up to vmax
@@ -102,14 +126,19 @@ export class CarSim {
     if (brake > 0) force -= brake * st.mass * 8;
     if (this.offroad) force -= st.mass * (1.2 + this.speed * 0.06);
 
+    const prevSpeed = this.speed;
     this.speed = Math.max(0, this.speed + (force / st.mass) * dt);
+    const longAccel = (this.speed - prevSpeed) / dt;
 
     // ----- steering -----
     // yaw authority fades with speed; demanding more lateral g than grip scrubs speed
     const maxYaw = 2.2 / (1 + this.speed / 18);
     let yawRate = steer * maxYaw;
     const latDemand = Math.abs(yawRate * this.speed);
-    const gripAvail = this.offroad ? st.grip * 0.55 : st.grip;
+    // load transfer: a rolled body overloads the outside tires. Because roll
+    // lags and (softly sprung) overshoots, flick transitions cost extra grip.
+    const rollLoss = Math.min(ROLL_GRIP_LOSS_CAP, ROLL_GRIP_LOSS * Math.abs(this.roll));
+    const gripAvail = (this.offroad ? st.grip * 0.55 : st.grip) * (1 - rollLoss);
     this.screech = 0;
     if (latDemand > gripAvail && this.speed > 4) {
       const excess = latDemand / gripAvail;
@@ -118,6 +147,20 @@ export class CarSim {
       this.screech = Math.min(1, excess - 1 + 0.3);
     }
     this.heading += yawRate * dt;
+
+    // ----- body attitude (suspension) -----
+    // spring-damper toward the pose the chassis accelerations demand; soft
+    // suspension is slow and underdamped (cartoonish slosh), race is snappy+flat
+    const soft = Math.min(1.3, st.softness ?? 1);
+    const wn = 13 - 6.5 * soft;         // natural frequency, rad/s
+    const zeta = 0.95 - 0.45 * soft;    // damping ratio
+    const rollTarget = (yawRate * this.speed / st.grip) * soft * ROLL_MAX;
+    const longG = Math.max(-1.1, Math.min(1.1, longAccel / 9.8));
+    const pitchTarget = -longG * soft * PITCH_MAX;
+    this.rollVel += ((rollTarget - this.roll) * wn * wn - 2 * zeta * wn * this.rollVel) * dt;
+    this.roll += this.rollVel * dt;
+    this.pitchVel += ((pitchTarget - this.pitch) * wn * wn - 2 * zeta * wn * this.pitchVel) * dt;
+    this.pitch += this.pitchVel * dt;
 
     // ----- integrate -----
     this.x += Math.sin(this.heading) * this.speed * dt;

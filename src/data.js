@@ -5,41 +5,42 @@
 //  mass   kg
 //  drag   N·s²/m² lumped aero drag coefficient
 //  grip   m/s²   max lateral acceleration (before tire multiplier)
+//  susp           base suspension softness — old buggy-sprung cars wallow more
 //  cyl            cylinders (drives the sound fundamental)
 export const CAR_TIERS = [
   {
     id: 0, name: "1929 Ford Model A", short: "Model A",
-    power: 52000, mass: 980, drag: 1.25, grip: 6.2, cyl: 4, gears: 3,
+    power: 52000, mass: 980, drag: 1.25, grip: 6.2, susp: 1.30, cyl: 4, gears: 3,
     style: "prewar", color: 0x6e5b3e, accent: 0x2a2a2a, value: 200,
   },
   {
     id: 1, name: "1932 Ford Deuce Coupe", short: "Deuce Coupe",
-    power: 78000, mass: 1020, drag: 1.05, grip: 6.9, cyl: 8, gears: 3,
+    power: 78000, mass: 1020, drag: 1.05, grip: 6.9, susp: 1.22, cyl: 8, gears: 3,
     style: "prewar", color: 0x8a1f1f, accent: 0x111111, value: 450,
   },
   {
     id: 2, name: "1949 Mercury Eight", short: "Merc Eight",
-    power: 105000, mass: 1500, drag: 0.85, grip: 7.4, cyl: 8, gears: 3,
+    power: 105000, mass: 1500, drag: 0.85, grip: 7.4, susp: 1.15, cyl: 8, gears: 3,
     style: "fifties", color: 0x2c3a52, accent: 0x1a1a1a, value: 800,
   },
   {
     id: 3, name: "1957 Chevy Bel Air", short: "Bel Air",
-    power: 140000, mass: 1560, drag: 0.75, grip: 7.9, cyl: 8, gears: 4,
+    power: 140000, mass: 1560, drag: 0.75, grip: 7.9, susp: 1.08, cyl: 8, gears: 4,
     style: "fifties", color: 0x39b7b2, accent: 0xf5f2e8, fins: true, value: 1400,
   },
   {
     id: 4, name: "1964 Pontiac GTO", short: "GTO",
-    power: 185000, mass: 1580, drag: 0.62, grip: 8.5, cyl: 8, gears: 4,
+    power: 185000, mass: 1580, drag: 0.62, grip: 8.5, susp: 0.95, cyl: 8, gears: 4,
     style: "muscle", color: 0x27408b, accent: 0x0e0e0e, value: 2200,
   },
   {
     id: 5, name: "1969 Dodge Charger", short: "Charger",
-    power: 235000, mass: 1620, drag: 0.55, grip: 9.0, cyl: 8, gears: 4,
+    power: 235000, mass: 1620, drag: 0.55, grip: 9.0, susp: 0.90, cyl: 8, gears: 4,
     style: "muscle", color: 0x1c1c1c, accent: 0xd35400, value: 3200,
   },
   {
     id: 6, name: "1970 Hemi 'Cuda", short: "Hemi 'Cuda",
-    power: 290000, mass: 1560, drag: 0.50, grip: 9.6, cyl: 8, gears: 5,
+    power: 290000, mass: 1560, drag: 0.50, grip: 9.6, susp: 0.85, cyl: 8, gears: 5,
     style: "muscle", color: 0xb0d312, accent: 0x111111, value: 5000,
   },
 ];
@@ -85,6 +86,16 @@ export const PARTS = {
       { n: "Street Radials",   mult: 1.13, price: 220 },
       { n: "Wide Grippers",    mult: 1.27, price: 600 },
       { n: "Racing Slicks",    mult: 1.45, price: 1400 },
+    ],
+  },
+  suspension: {
+    label: "SUSPENSION",
+    affects: "handling",
+    levels: [
+      { n: "Sagging Leaf Springs", price: 0,    softness: 1.00 },
+      { n: "Heavy-Duty Shocks",    price: 250,  softness: 0.62 },
+      { n: "Sway Bars + Lowered",  price: 700,  softness: 0.36 },
+      { n: "Full Race Suspension", price: 1600, softness: 0.16 },
     ],
   },
   gearbox: {

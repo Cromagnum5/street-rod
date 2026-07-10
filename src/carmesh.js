@@ -1,5 +1,6 @@
 // Procedural low-poly classic car meshes. Three era styles: prewar, fifties, muscle.
-// Returns a THREE.Group facing +Z, resting on y=0, with .userData.wheels for spin
+// Returns a THREE.Group facing +Z, resting on y=0, with .userData.wheels for spin,
+// .userData.body (the sprung body sub-group — roll/pitch this, wheels stay planted),
 // and .userData.paintMat for tinting (bosses get pink treatments elsewhere if wanted).
 
 import * as THREE from "three";
@@ -202,21 +203,28 @@ export function buildCar(tier, opts = {}) {
   else if (tier.style === "fifties") built = buildFifties(paint, accentMat, tier.fins);
   else built = buildMuscle(paint, accentMat);
 
-  const { g, spec } = built;
-  const wheels = addWheels(g, spec);
+  const { g: body, spec } = built;
+  // wheels live on the root so suspension roll/pitch only moves the body
+  const root = new THREE.Group();
+  root.add(body);
+  const wheels = addWheels(root, spec);
   // fat rear tires for muscle cars
+  let rake = 0;
   if (spec.rearWheelR) {
     for (const i of [2, 3]) {
       wheels[i].scale.setScalar(spec.rearWheelR / spec.wheelR);
       wheels[i].position.y = spec.rearWheelR;
     }
     // rake: nose down
-    g.rotation.x = 0.015;
+    rake = 0.015;
+    body.rotation.x = rake;
   }
 
-  g.userData.wheels = wheels;
-  g.userData.wheelR = spec.wheelR;
-  g.userData.paintMat = paint;
-  g.userData.length = spec.length;
-  return g;
+  root.userData.body = body;
+  root.userData.bodyRake = rake;
+  root.userData.wheels = wheels;
+  root.userData.wheelR = spec.wheelR;
+  root.userData.paintMat = paint;
+  root.userData.length = spec.length;
+  return root;
 }

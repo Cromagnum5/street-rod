@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { CAR_TIERS, PARTS, PART_KEYS, STREET_RACERS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
 import { buildCar } from "./carmesh.js";
 import { Track, PALETTES, ROAD_HALF_W } from "./track.js";
-import { CarSim, effectiveStats, topSpeed, resolveContact, REDLINE, IDLE_RPM } from "./physics.js";
+import { CarSim, effectiveStats, topSpeed, resolveContact, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
 import { AIDriver } from "./ai.js";
 import * as sfx from "./audio.js";
 
@@ -242,7 +242,8 @@ function renderGaragePanel() {
   const vmax = Math.round(topSpeed(stats) * 2.23694);
   const nextBoss = player.carTier < 6 ? BOSSES[player.carTier].name : null;
   el("garageStats").innerHTML =
-    `POWER &nbsp;${hp} hp<br>TOP SPEED &nbsp;~${vmax} mph<br>GRIP &nbsp;${stats.grip.toFixed(1)} g-units<br>` +
+    `POWER &nbsp;${hp} hp<br>TOP SPEED &nbsp;~${vmax} mph<br>GRIP &nbsp;${stats.cornerGrip.toFixed(1)} g-units<br>` +
+    `BODY LEAN &nbsp;~${(stats.softness * ROLL_MAX * 57.3).toFixed(1)}&deg;<br>` +
     `GEARS &nbsp;${stats.gears}-speed<br><br>` +
     (nextBoss
       ? `<span style="color:#ff4fa3">NEXT BOSS: ${nextBoss}</span>`
@@ -496,6 +497,10 @@ function raceTick(t, dt) {
   for (const [sim, mesh] of [[p, race.playerMesh], [ai, race.aiMesh]]) {
     mesh.position.set(sim.x, 0, sim.z);
     mesh.rotation.y = sim.heading;
+    // suspension: only the body leans/pitches, wheels stay on the road
+    const body = mesh.userData.body;
+    body.rotation.z = sim.roll;
+    body.rotation.x = mesh.userData.bodyRake + sim.pitch;
     const wheels = mesh.userData.wheels;
     const spin = sim.speed * dt / mesh.userData.wheelR;
     for (let i = 0; i < 4; i++) wheels[i].rotation.x += spin;
