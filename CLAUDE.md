@@ -27,19 +27,23 @@ sound is synthesized live with the Web Audio API.
   (`SAVE_KEY` in data.js). States are objects with `enter/exit/onKey`;
   per-frame work goes through the module-level `sceneTick` callback.
 - `src/data.js` — all balance data: `CAR_TIERS` (7-car pink-slip ladder,
-  Model A → Hemi 'Cuda), `PARTS` (5 categories × 3 buyable levels), racer
-  names/flavor, `BOSSES` ladder.
+  Model A → Hemi 'Cuda, each with a `susp` base softness), `PARTS`
+  (6 categories × 3 buyable levels), racer names/flavor, `BOSSES` ladder.
 - `src/carmesh.js` — procedural car builder; three era styles (`prewar`,
   `fifties`, `muscle`) from boxes/cylinders + a `wedge()` prism helper.
-  Returns a Group facing +Z with `userData.wheels` for spin/steer.
+  Returns a Group facing +Z with `userData.wheels` for spin/steer and
+  `userData.body`, the sprung-body sub-group that suspension roll/pitch
+  rotates while the wheels stay planted on the road.
 - `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
   hint)`.
 - `src/physics.js` — `CarSim`: scalar speed + heading, traction-limited
   launch, drag-limited top speed, grip-capped steering with speed scrub,
-  automatic gearbox (RPM drives the audio). `effectiveStats(tier, parts)`
-  merges base car + part multipliers.
+  automatic gearbox (RPM drives the audio), sprung-body roll/pitch (see
+  suspension notes below). `effectiveStats(tier, parts)` merges base car +
+  part multipliers; its `cornerGrip` (roll-adjusted) feeds the AI planner
+  and the garage GRIP stat.
 - `src/ai.js` — pure-pursuit steering to a lookahead point, corner-speed
   planning from curvature, skill-scaled reaction delay, light rubber band.
 - `src/audio.js` — `EngineVoice`: firing frequency = rpm/60 × cyl/2 into a
@@ -62,6 +66,19 @@ sound is synthesized live with the Web Audio API.
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big
   FOV swings. Steady-speed widening is capped at +9°.
+- Suspension (added 2026-07-10): the body is a spring-damper chasing chassis
+  acceleration — soft springs lean ~7–8° with underdamped slosh (deliberately
+  cartoonish), Full Race Suspension sits ~1° flat. Roll costs grip (load
+  transfer), which is the "per-tire grip" aggregated: soft = penalty, never
+  a stock-grip bonus, capped so it stays forgiving. Roll lags the steering,
+  so S-curve flicks in a wallowy car cost extra grip — that's intended.
+  Only the body leans (`userData.body`); wheels and camera stay level.
+  Knobs, all in `physics.js`: `ROLL_MAX` / `PITCH_MAX` (lean size),
+  `wn`/`zeta` in `CarSim.step` (wobble speed / bounciness, both scale with
+  softness), `ROLL_GRIP_LOSS` + `ROLL_GRIP_LOSS_CAP` (15% max penalty).
+  Softness = tier `susp` (era-scaled, old iron wallows more) × part level
+  `softness` in `data.js`. Keep `suspensionGripFactor` in sync with the
+  in-step loss so the AI planner and garage stat match what the sim does.
 - Feel changes (steering, physics, camera) get committed only after Jason
   playtests in his browser and confirms.
 
