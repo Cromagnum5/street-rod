@@ -89,23 +89,15 @@ function buildPrewar(paint, accentMat) {
   const cabin = box(1.15, 1.0, 1.25, paint); cabin.position.set(0, 0.95, -0.55); g.add(cabin);
   const roof = box(1.2, 0.12, 1.3, accentMat); roof.position.set(0, 1.5, -0.55); g.add(roof);
   const ws = wedge(1.05, 0.5, 0.35, GLASS); ws.position.set(0, 1.05, 0.28); g.add(ws);
-  const trunk = box(1.05, 0.55, 0.55, paint); trunk.position.set(0, 0.7, -1.45); g.add(trunk);
+  // trunk rides high enough to show the exposed rear axle beneath it
+  const trunk = box(1.05, 0.45, 0.55, paint); trunk.position.set(0, 0.8, -1.45); g.add(trunk);
 
   // vertical grille + radiator
   const grille = box(0.85, 0.6, 0.12, CHROME); grille.position.set(0, 0.78, 1.85); g.add(grille);
-  // exposed fenders: half-cylinders over wheels
-  for (const z of [spec.wheelBase / 2, -spec.wheelBase / 2]) {
-    for (const sx of [-1, 1]) {
-      const f = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.52, 0.52, 0.3, 10, 1, false, 0, Math.PI),
-        accentMat);
-      f.rotation.z = Math.PI / 2;
-      f.rotation.y = Math.PI / 2;
-      f.position.set(sx * spec.trackW / 2, 0.48, z);
-      g.add(f);
-    }
-    // running boards
-  }
+  // fenderless hot-rod look: bare wheels, solid rear axle (added on the root
+  // in buildCar so it stays planted with the wheels)
+  spec.rearAxle = true;
+  // running boards
   for (const sx of [-1, 1]) {
     const rb = box(0.22, 0.07, 1.6, accentMat); rb.position.set(sx * 0.72, 0.32, -0.15); g.add(rb);
   }
@@ -208,6 +200,18 @@ export function buildCar(tier, opts = {}) {
   const root = new THREE.Group();
   root.add(body);
   const wheels = addWheels(root, spec);
+  if (spec.rearAxle) {
+    const axle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.07, spec.trackW, 8), CHROME);
+    axle.rotation.z = Math.PI / 2;
+    axle.castShadow = true;
+    const diff = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), CHROME);
+    diff.castShadow = true;
+    const rear = new THREE.Group();
+    rear.add(axle, diff);
+    rear.position.set(0, spec.wheelR, -spec.wheelBase / 2);
+    root.add(rear);
+  }
   // fat rear tires for muscle cars
   let rake = 0;
   if (spec.rearWheelR) {
