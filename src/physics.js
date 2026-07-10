@@ -124,6 +124,10 @@ export class CarSim {
     this.z += Math.cos(this.heading) * this.speed * dt;
 
     // ----- track relation -----
+    // Skip once finished: the centerline ends at the finish, so projecting a
+    // car coasting past it misreads overshoot as lateral offset and the soft
+    // boundary would snap the car back every frame (camera rubber band).
+    if (this.finished) return;
     const proj = this.track.project({ x: this.x, z: this.z }, this.trackDist);
     this.trackDist = proj.dist;
     this.lateral = proj.lateral;
