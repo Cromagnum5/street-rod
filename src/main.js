@@ -434,6 +434,7 @@ function buildRaceScene(opp) {
   race.over = false;
   race.aiFinishedAt = null;
   race.lastBeep = 4;
+  race.steer = 0;
 
   el("hudMoney").textContent = `CASH $${player.money}`;
   el("hudWager").textContent = opp.boss ? "♡ PINK SLIP RACE ♡"
@@ -455,7 +456,10 @@ function raceTick(t, dt) {
 
   const thr = (keys.ArrowUp || keys.KeyW || keys.ControlLeft || keys.ControlRight) ? 1 : 0;
   const brk = (keys.ArrowDown || keys.KeyS) ? 1 : 0;
-  const steer = ((keys.ArrowLeft || keys.KeyA) ? 1 : 0) - ((keys.ArrowRight || keys.KeyD) ? 1 : 0);
+  // keys are digital; ramp toward the target so taps give partial steer
+  const steerTarget = ((keys.ArrowLeft || keys.KeyA) ? 1 : 0) - ((keys.ArrowRight || keys.KeyD) ? 1 : 0);
+  race.steer += (steerTarget - race.steer) * Math.min(1, dt * 9);
+  const steer = race.steer;
 
   if (race.countdown > 0) {
     race.countdown -= dt;

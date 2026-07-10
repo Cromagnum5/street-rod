@@ -114,7 +114,7 @@ export class CarSim {
     if (latDemand > gripAvail && this.speed > 4) {
       const excess = latDemand / gripAvail;
       yawRate /= excess;                       // understeer to the grip limit
-      this.speed *= 1 - Math.min(0.35, (excess - 1) * 0.35) * dt; // scrub
+      this.speed *= 1 - Math.min(0.10, (excess - 1) * 0.05) * dt; // gentle scrub
       this.screech = Math.min(1, excess - 1 + 0.3);
     }
     this.heading += yawRate * dt;
