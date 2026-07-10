@@ -18,7 +18,7 @@ export class AIDriver {
     this.track = track;
     this.skill = skill;
     this.lane = lanePreference;      // preferred lateral offset (stays out of your lane... mostly)
-    this.reaction = 0.35 + (1 - skill) * 0.9; // seconds asleep at the light
+    this.reaction = 0.35 + (1 - skill) * 0.9; // seconds before the steering brain wakes up
     this.wobblePhase = Math.random() * 10;
     this.t = 0;
     // virtual keyboard: better drivers tap faster (finer duty control)
@@ -34,8 +34,10 @@ export class AIDriver {
     const car = this.car;
     this.t += dt;
     if (raceTime < this.reaction) {
+      // launch is floored from the green — the car was revving at the line
+      // and holds it down; only corner planning/steering wakes up late
       this.steer += (0 - this.steer) * Math.min(1, dt * 9);
-      return { throttle: 0, brake: 0, steer: this.steer };
+      return { throttle: 1, brake: 0, steer: this.steer };
     }
 
     // --- speed planning: slowest corner in the next few seconds ---

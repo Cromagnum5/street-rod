@@ -440,6 +440,8 @@ function buildRaceScene(opp) {
   race.prevSpeed = 0;
   race.accelSm = 0;
   race.camSpeed = 0;
+  race.aiRev = 0;
+  race.aiRevT = 0.3 + Math.random() * 0.6; // first blip lands shortly after staging
 
   el("hudMoney").textContent = `CASH $${player.money}`;
   el("hudWager").textContent = opp.boss ? "♡ PINK SLIP RACE ♡"
@@ -475,8 +477,15 @@ function raceTick(t, dt) {
     // rev at the line, but hold the cars
     p.rpm += ((IDLE_RPM + thr * 3600) - p.rpm) * Math.min(1, dt * 6);
     p.throttleOut = thr;
-    ai.rpm += ((IDLE_RPM + (race.countdown < 1.5 ? 3000 : 200)) - ai.rpm) * Math.min(1, dt * 4);
-    ai.throttleOut = race.countdown < 1.5 ? 0.8 : 0.1;
+    // AI stabs random aggressive blips while staging, then pins it for the go
+    if (race.countdown < 1.2) race.aiRev = 1;
+    else if (race.time >= race.aiRevT) {
+      race.aiRev = race.aiRev ? 0 : 1;
+      race.aiRevT = race.time + (race.aiRev ? 0.15 + Math.random() * 0.25 : 0.15 + Math.random() * 0.5);
+    }
+    // stabs hit fast and fall off slower — that asymmetry is what reads angry
+    ai.rpm += ((IDLE_RPM + race.aiRev * 3600) - ai.rpm) * Math.min(1, dt * (race.aiRev ? 8 : 3.5));
+    ai.throttleOut = race.aiRev;
   } else if (!race.over) {
     p.step(dt, thr, brk, steer);
     const ctrl = race.driver.drive(dt, race.time - race.goTime, p.trackDist);
