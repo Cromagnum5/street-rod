@@ -58,6 +58,12 @@ sound is synthesized live with the Web Audio API.
 - Balance target: stock car beats 1–2★ racers, upgrades needed for 4–5★,
   near-maxed car beats the boss. Street racers run near-stock (`aiParts()`),
   bosses get built machines.
+- Camera drama comes from **acceleration, not speed**: framing follows the
+  smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
+  handles launches/braking. Keep zooms subtle — Jason gets seasick from big
+  FOV swings. Steady-speed widening is capped at +9°.
+- Feel changes (steering, physics, camera) get committed only after Jason
+  playtests in his browser and confirms.
 
 ## Testing
 
@@ -70,7 +76,26 @@ check visuals. `page.on("pageerror")` must stay empty. Quick syntax check:
 `npx esbuild --bundle src/main.js --outfile=/dev/null --format=esm
 --alias:three=./lib/three.module.js`.
 
+For physics/balance questions, skip the browser: bundle a Node script that
+imports `physics.js` (and `Track` if needed) with the same esbuild
+`--alias:three` trick, then step `CarSim` directly. A stub track
+(`{ length, sample, project }`) works for straight-line tests; a real
+`new Track(len, seed)` plus a crude centerline chaser works for full runs.
+Compare tunings by `git stash` / re-bundle / `git stash pop` (use
+`git -C <repo>` — the bundles run from the scratchpad). This caught the
+cornering-scrub and finish-teleport numbers precisely.
+
 ## Gotchas
+
+- `track.project()` clamps to the last centerline segment, so anything past
+  the finish line reads its forward overshoot as *lateral* offset — that's
+  why `CarSim.step` skips track relation once `this.finished` (finished cars
+  coast straight). Don't reintroduce projection for finished cars; it made
+  the soft boundary teleport-snap them (~43 m/frame) after the line.
+- Player steering is smoothed in `raceTick` (`race.steer` ramps ~0.25 s to
+  full lock) because digital keys at full lock always exceed grip; the
+  smoothed value also drives the front-wheel visuals. Over-grip speed scrub
+  in physics is deliberately gentle (10%/s cap).
 
 - `/home/cromulon` briefly had a stray commit-less `.git` (deleted
   2026-07-10). If `git add -A` ever stages home-dir files again, stop —
