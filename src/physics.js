@@ -14,6 +14,13 @@ const PITCH_MAX = 0.055;        // rad of squat/dive per g of longitudinal accel
 const ROLL_GRIP_LOSS = 1.1;     // grip fraction lost per rad of roll (load transfer)
 const ROLL_GRIP_LOSS_CAP = 0.15; // forgiving: never lose more than 15%
 
+// Getting loose: past the grip limit the path bends at the grip cap while the
+// nose keeps some of the extra rotation, so a slip angle opens up instead of
+// hard understeer. Capped and self-recovering — a slide, never a spinout.
+const SLIP_MAX = 0.30;      // rad — biggest drift angle the car can hang out
+const SLIP_YAW_KEEP = 0.6;  // fraction of over-limit yaw the nose keeps
+const SLIP_RECOVER = 3.2;   // 1/s — how fast the tires bite the slide back in line
+
 // Steady-state cornering grip once body roll has set in — what the car can
 // actually hold mid-corner. Used by the AI's corner-speed planner too.
 export function suspensionGripFactor(softness) {
@@ -72,7 +79,8 @@ export class CarSim {
     this.rpm = IDLE_RPM;
     this.shiftTimer = 0;
     this.throttleOut = 0;   // what the engine actually gets (cut during shifts)
-    this.screech = 0;       // 0..1, for skid sound + effects
+    this.screech = 0;       // 0..1, smoothed slide intensity for squeal + effects
+    this.slip = 0;          // rad, nose vs travel direction (+ = tail out left)
     this.offroad = false;
     this.finished = false;
 
@@ -116,10 +124,14 @@ export class CarSim {
     this.throttleOut = throttle;
 
     // ----- longitudinal -----
-    let force = 0;
+    let force = 0, wheelspin = 0;
     if (throttle > 0) {
       force = throttle * st.power / Math.max(this.speed, 5);
-      force = Math.min(force, st.grip * st.mass * 0.95); // traction-limited launch
+      const tractionCap = st.grip * st.mass * 0.95;
+      if (force > tractionCap) {
+        wheelspin = Math.min(1, (force / tractionCap - 1) * 0.8); // launch chirp
+        force = tractionCap; // traction-limited launch
+      }
     }
     force -= st.drag * this.speed * this.speed;
     force -= 0.18 * st.mass; // rolling resistance
@@ -131,22 +143,35 @@ export class CarSim {
     const longAccel = (this.speed - prevSpeed) / dt;
 
     // ----- steering -----
-    // yaw authority fades with speed; demanding more lateral g than grip scrubs speed
+    // yaw authority fades with speed; demanding more lateral g than grip
+    // makes the car get loose (see SLIP_* above) and gently scrubs speed
     const maxYaw = 2.2 / (1 + this.speed / 18);
     let yawRate = steer * maxYaw;
-    const latDemand = Math.abs(yawRate * this.speed);
     // load transfer: a rolled body overloads the outside tires. Because roll
     // lags and (softly sprung) overshoots, flick transitions cost extra grip.
     const rollLoss = Math.min(ROLL_GRIP_LOSS_CAP, ROLL_GRIP_LOSS * Math.abs(this.roll));
     const gripAvail = (this.offroad ? st.grip * 0.55 : st.grip) * (1 - rollLoss);
-    this.screech = 0;
-    if (latDemand > gripAvail && this.speed > 4) {
-      const excess = latDemand / gripAvail;
-      yawRate /= excess;                       // understeer to the grip limit
+    // fastest the tires can actually bend the car's path (rad/s)
+    const velYawMax = gripAvail / Math.max(this.speed, 4);
+    let velYaw = yawRate;   // how fast the velocity direction turns
+    let slide = wheelspin;  // drives the squeal; dirt doesn't squeal
+    if (Math.abs(yawRate) > velYawMax && this.speed > 4) {
+      const excess = Math.abs(yawRate) / velYawMax;
+      velYaw = Math.sign(yawRate) * velYawMax;      // path bends at the grip cap
+      yawRate = velYaw + (yawRate - velYaw) * SLIP_YAW_KEEP; // nose keeps going — loose
       this.speed *= 1 - Math.min(0.10, (excess - 1) * 0.05) * dt; // gentle scrub
-      this.screech = Math.min(1, excess - 1 + 0.3);
+      slide = Math.max(slide, Math.min(1, (excess - 1) * 1.5 + 0.25));
     }
     this.heading += yawRate * dt;
+    // slip angle: nose vs path. Grows while sliding; the tires bite it back
+    // toward zero, and that bite bends the path (the drift-exit hook).
+    this.slip += (yawRate - velYaw) * dt;
+    this.slip -= this.slip * Math.min(1, SLIP_RECOVER * dt);
+    this.slip = Math.max(-SLIP_MAX, Math.min(SLIP_MAX, this.slip));
+    slide = Math.max(slide, Math.abs(this.slip) / SLIP_MAX);
+    if (this.offroad) slide *= 0.15;
+    // squeal envelope: near-instant attack, short tail so chirps ring a touch
+    this.screech += (slide - this.screech) * Math.min(1, dt * (slide > this.screech ? 30 : 5));
 
     // ----- body attitude (suspension) -----
     // spring-damper toward the pose the chassis accelerations demand; soft
@@ -154,7 +179,8 @@ export class CarSim {
     const soft = Math.min(1.3, st.softness ?? 1);
     const wn = 13 - 6.5 * soft;         // natural frequency, rad/s
     const zeta = 0.95 - 0.45 * soft;    // damping ratio
-    const rollTarget = (yawRate * this.speed / st.grip) * soft * ROLL_MAX;
+    // lean follows the real lateral g (the path bend), not the loose nose yaw
+    const rollTarget = (velYaw * this.speed / st.grip) * soft * ROLL_MAX;
     const longG = Math.max(-1.1, Math.min(1.1, longAccel / 9.8));
     const pitchTarget = -longG * soft * PITCH_MAX;
     this.rollVel += ((rollTarget - this.roll) * wn * wn - 2 * zeta * wn * this.rollVel) * dt;
@@ -163,8 +189,10 @@ export class CarSim {
     this.pitch += this.pitchVel * dt;
 
     // ----- integrate -----
-    this.x += Math.sin(this.heading) * this.speed * dt;
-    this.z += Math.cos(this.heading) * this.speed * dt;
+    // the car travels where the velocity points, not where the nose points
+    const velHeading = this.heading - this.slip;
+    this.x += Math.sin(velHeading) * this.speed * dt;
+    this.z += Math.cos(velHeading) * this.speed * dt;
 
     // ----- track relation -----
     // Skip once finished: the centerline ends at the finish, so projecting a

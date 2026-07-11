@@ -145,23 +145,44 @@ export class EngineVoice {
 
 // ---------- one-shot / utility sounds ----------
 
+// Two-stage tire squeal. Light slip is a thin, high warbling chirp (the tire
+// "singing" at the edge); a full slide drops the pitch and brings in a wider
+// rubber-scrub layer underneath. Both are the shared noise loop through
+// bandpasses — the high-Q one is what makes it tonal rather than hissy.
 export class SkidSound {
   constructor() {
     const c = audioContext();
     if (!sharedNoise) sharedNoise = noiseBuffer(c);
-    this.src = c.createBufferSource();
-    this.src.buffer = sharedNoise; this.src.loop = true;
-    this.filter = c.createBiquadFilter();
-    this.filter.type = "bandpass"; this.filter.frequency.value = 900; this.filter.Q.value = 2.5;
-    this.gain = c.createGain(); this.gain.gain.value = 0;
-    this.src.connect(this.filter); this.filter.connect(this.gain); this.gain.connect(c.destination);
-    this.src.start();
+    const mkLayer = (freq, q) => {
+      const src = c.createBufferSource();
+      src.buffer = sharedNoise; src.loop = true;
+      const f = c.createBiquadFilter();
+      f.type = "bandpass"; f.frequency.value = freq; f.Q.value = q;
+      const g = c.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(c.destination);
+      src.start();
+      return { f, g };
+    };
+    this.sing = mkLayer(2000, 8);    // tonal squeal
+    this.scrub = mkLayer(620, 1.3);  // rubber scrub under a full slide
+    // slow warble on the squeal pitch — reads "tire", not "synth"
+    this.lfo = c.createOscillator();
+    this.lfo.type = "sine"; this.lfo.frequency.value = 5.5;
+    this.lfoGain = c.createGain(); this.lfoGain.gain.value = 0;
+    this.lfo.connect(this.lfoGain); this.lfoGain.connect(this.sing.f.frequency);
+    this.lfo.start();
     this.c = c;
   }
-  update(intensity) { // 0..1
-    const t = this.c.currentTime;
-    this.filter.frequency.setTargetAtTime(700 + intensity * 500, t, 0.05);
-    this.gain.gain.setTargetAtTime(intensity * 0.12, t, 0.04);
+  update(intensity) { // 0..1: ~0.2 = starting to slide, 1 = fully loose
+    const t = this.c.currentTime, x = Math.max(0, Math.min(1, intensity));
+    const on = x > 0.04;
+    // pitch sinks as the slide deepens; warble widens with it
+    this.sing.f.frequency.setTargetAtTime(2100 - 750 * x, t, 0.06);
+    this.lfoGain.gain.setTargetAtTime(on ? 40 + 110 * x : 0, t, 0.06);
+    this.sing.g.gain.setTargetAtTime(on ? 0.015 + 0.095 * x : 0, t, 0.04);
+    // scrub layer only past the onset zone — the "fully sliding" voice
+    const deep = Math.max(0, (x - 0.4) / 0.6);
+    this.scrub.g.gain.setTargetAtTime(deep * 0.07, t, 0.05);
   }
 }
 

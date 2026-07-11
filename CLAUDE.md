@@ -118,6 +118,20 @@ sound is synthesized live with the Web Audio API.
   rev for the last 1.2s into the launch. Balance note: launches no longer
   stagger by skill — if 1–2★ racers ever feel too strong off the line,
   reintroduce a small stagger via partial (not zero) pre-reaction throttle.
+- Getting loose (Jason playtested + approved 2026-07-10): past the grip
+  limit the path still bends at the grip cap, but the nose keeps 60% of the
+  excess yaw, opening a slip angle — a slide instead of hard understeer.
+  Slip is capped (`SLIP_MAX` 0.30 rad) and self-recovering (`SLIP_RECOVER`
+  bites it back in ~0.3 s; the bite bends the path — the drift-exit hook),
+  so there are no spinouts. Position integrates along `heading - slip`, and
+  the chase camera follows that velocity direction so the drift angle shows
+  in frame. `screech` is now a smoothed 0..1 slide signal (launch wheelspin
+  chirps count; offroad mutes it ×0.15 — dirt doesn't squeal). `SkidSound`
+  is two-stage: thin ~2 kHz warbling chirp at slide onset, pitch sinking +
+  a 620 Hz scrub layer past 0.4 intensity. Knobs: `SLIP_*` in physics.js,
+  layer gains/freqs in `SkidSound`. The 16-seed boss AI sim got *better*
+  under this model (offroad 16.5→8.2 s/race, same harness, ~2.5 s faster) —
+  the nose rotating into the corner makes pure pursuit unwind earlier.
 - Gearboxes are all automatics — the sim auto-shifts, so part names must
   not say "Manual" (Jason's call, 2026-07-10). Gear count is
   `max(tier.gears + closeRatioBonus, level.minGears)` in `effectiveStats`;
@@ -133,7 +147,9 @@ Headless smoke test pattern that works on this machine: playwright-core
 `~/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell`
 with args `--use-gl=swiftshader --enable-unsafe-swiftshader`. Serve the repo,
 send key events, assert on HUD/menu DOM, screenshot and read the PNGs to
-check visuals. `page.on("pageerror")` must stay empty. Quick syntax check:
+check visuals. `page.on("pageerror")` must stay empty. `window.__race` is a
+live debug handle on the race state (`__race.player.speed/slip/screech`…);
+menu path is Enter (title) → Space (garage) → Enter (opponent card). Quick syntax check:
 `npx esbuild --bundle src/main.js --outfile=/dev/null --format=esm
 --alias:three=./lib/three.module.js`.
 

@@ -397,6 +397,7 @@ function showCard(idx, dir) {
 // ---------------------------------------------------------------- RACE
 
 const race = {};
+window.__race = race; // debug handle for the headless smoke tests
 const tachoSegs = [];
 {
   const tacho = el("tacho");
@@ -566,7 +567,10 @@ function raceTick(t, dt) {
   }
 
   // ----- chase camera -----
-  const fx = Math.sin(p.heading), fz = Math.cos(p.heading);
+  // follow the travel direction, not the nose: in a slide the car visibly
+  // hangs sideways in frame while the camera keeps tracking the path
+  const velHeading = p.heading - p.slip;
+  const fx = Math.sin(velHeading), fz = Math.cos(velHeading);
   // framing follows a smoothed speed, extra slow once the race is over, so
   // braking to a stop past the finish line doesn't rubber-band the camera
   race.camSpeed += (p.speed - race.camSpeed) * Math.min(1, dt * (race.over ? 1.0 : 6));
