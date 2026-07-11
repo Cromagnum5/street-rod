@@ -450,7 +450,9 @@ function buildRaceScene(opp) {
   const hemi = new THREE.HemisphereLight(palette.sky, palette.ground, 0.5);
   scene.add(hemi);
 
-  const length = opp.boss ? 3200 + player.carTier * 300 : 2300 + player.carTier * 200 + Math.random() * 400;
+  // boss races match the longest street race at the tier — no longer (Jason,
+  // 2026-07-11: a pink-slip race shouldn't drag past the money races)
+  const length = opp.boss ? 2700 + player.carTier * 200 : 2300 + player.carTier * 200 + Math.random() * 400;
   const track = new Track(length, (Math.random() * 1e9) | 0);
   track.buildMeshes(scene, palette);
 

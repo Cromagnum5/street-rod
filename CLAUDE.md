@@ -125,16 +125,43 @@ sound is synthesized live with the Web Audio API.
 - AI plays on a virtual keyboard (Jason's call, 2026-07-10): `AIDriver`
   quantizes its pure-pursuit intent into on/off key states so passing racers
   weave and correct like a human. Steer is closed-loop tapping — press
-  toward the want, release past it — through the same dt*9 ramp as the
-  player's keys; pedals are duty-cycle taps. Two load-bearing details:
-  releases are instant (only re-presses are dwell-gated — gating releases
-  makes the wheels flick ~0.5 steer on every straight-line correction), and
-  corners release lazily at `steerWant * 1.2` (release exactly at the want
-  and the tap-band sags under it — sim showed the boss running wide,
-  4.2s/race offroad vs 0.9 analog baseline; lazy release restores 1.1s).
-  Knobs in `ai.js`: `tapPeriod`/`pedalPeriod` (skill-scaled tap cadence),
-  the 0.85 hold-solid and 0.05 re-press thresholds. The AI's front-wheel
+  toward the want, hold a human-length beat, release past it — through the
+  same dt*9 ramp as the player's keys; pedals are duty-cycle taps.
+  Load-bearing details: presses are deliberate stabs (Jason, 2026-07-11,
+  superseding the old releases-are-instant rule — he wanted visible
+  player-size wheel swings, not one-frame flicks): release is gated by a
+  hold that scales with the correction, `minHold * min(1, |want|/0.5)`,
+  floored at **0.03 s** — the floor is load-bearing, at 0.05 every small
+  trim overshot and demanded a counter-stab and the car visibly wobbled
+  down straights in a limit cycle (the tap-floor cycle also turned out to
+  be most of the boss's remaining wide-corner offroad). Wrong-direction
+  presses still release instantly. Corners release lazily at
+  `steerWant * 1.2` (release exactly at the want and the tap-band sags
+  under it — sim showed the boss running wide; lazy release fixed it).
+  Low-skill lane wobble is a slow drift (±0.5 m, 0.4 rad/s ≈ 16 s period) —
+  faster/bigger reads as slaloming, which Jason vetoed. Knobs in `ai.js`:
+  `tapPeriod`/`pedalPeriod` (skill-scaled tap cadence), `minHold`, the 0.85
+  hold-solid and 0.12 re-press deadband thresholds. The AI's front-wheel
   visuals follow `race.aiSteer` in main.js — don't hardcode them straight.
+- AI throttle & braking (Jason playtested + approved 2026-07-11, "much
+  improved"): straights are flat-out for **every** skill — the straight
+  target sits above `vmax` (asymptotic, so the pedal band never engages)
+  and the old low-skill target discount + throttle-breathe sine are gone;
+  skill expresses only in corners. Corner planning grip is
+  `0.86 + 0.12 * skill` (skill 1.0 stays at the historical 0.98 — that ~2%
+  margin is what the friction-circle 0.95 anticipation is tuned against).
+  Braking is late, not lookahead-coast: scan the full braking distance,
+  compute the decel each corner demands (`(v² − vc²)/2d`), and only brake
+  past a skill-scaled comfort threshold (`4.0 + 3.2*skill` m/s², lift and
+  coast above 0.7× of it, brake sized `/7` not `/8` to arrive a hair
+  under). Boss races were also shortened to match the longest street race
+  at the tier (`2700 + tier*200` in main.js) — a pink-slip race shouldn't
+  outlast the money races. Net effect (16-seed sim, rubber band off):
+  every tier faster than the pre-2026-07-11 baseline (1–2★ 85.0→79.3 s;
+  boss ~5%/km faster with offroad 10.2→0.19 s/race in that harness).
+  Balance watch: the boss no longer throws away seconds offroad — if a
+  near-maxed car can't beat it anymore, the planning-grip line above is
+  the first knob.
 - AI launch (Jason's call, 2026-07-10, `a61b180`): the AI holds full
   throttle from the green — the skill-scaled `reaction` delay in `ai.js`
   gates only the steering/corner-planning brain, never the launch (it used
