@@ -466,6 +466,10 @@ function buildRaceScene(opp) {
   race.driver = new AIDriver(race.ai, track, opp.skill, 3);
   race.playerMesh = buildCar(playerTier());
   race.aiMesh = buildCar(aiTierData, { color: opp.carColor }); // same paint as the card
+  // root carries heading (Y) then ground pitch (X) once hills exist; the
+  // default XYZ order would pitch about the world axis instead of the car's
+  race.playerMesh.rotation.order = "YXZ";
+  race.aiMesh.rotation.order = "YXZ";
   scene.add(race.playerMesh, race.aiMesh);
 
   race.playerVoice = new sfx.EngineVoice(soundSpec(playerTier(), player.parts), 0.5);
@@ -485,6 +489,7 @@ function buildRaceScene(opp) {
   race.prevSpeed = 0;
   race.accelSm = 0;
   race.camSpeed = 0;
+  race.camY = 0;
   race.aiRev = 0;
   race.aiRevT = 0.3 + Math.random() * 0.6; // first blip lands shortly after staging
 
@@ -553,8 +558,9 @@ function raceTick(t, dt) {
 
   // ----- meshes -----
   for (const [sim, mesh] of [[p, race.playerMesh], [ai, race.aiMesh]]) {
-    mesh.position.set(sim.x, 0, sim.z);
+    mesh.position.set(sim.x, sim.y, sim.z);
     mesh.rotation.y = sim.heading;
+    mesh.rotation.x = sim.groundPitch; // road slope; suspension pitch stays on the body
     // suspension: only the body leans/pitches, wheels stay on the road
     const body = mesh.userData.body;
     body.rotation.z = sim.roll;
@@ -574,10 +580,13 @@ function raceTick(t, dt) {
   // framing follows a smoothed speed, extra slow once the race is over, so
   // braking to a stop past the finish line doesn't rubber-band the camera
   race.camSpeed += (p.speed - race.camSpeed) * Math.min(1, dt * (race.over ? 1.0 : 6));
+  // camera height rides a slower-smoothed copy of the car's road height so a
+  // future crest/dip won't lurch the frame (Jason + big camera moves = seasick)
+  race.camY += (p.y - race.camY) * Math.min(1, dt * 4);
   const dist = 4.3 + race.camSpeed * 0.013;
-  const camGoal = new THREE.Vector3(p.x - fx * dist, 2.15 + race.camSpeed * 0.004, p.z - fz * dist);
+  const camGoal = new THREE.Vector3(p.x - fx * dist, race.camY + 2.15 + race.camSpeed * 0.004, p.z - fz * dist);
   camera.position.lerp(camGoal, 1 - Math.exp(-dt * 5));
-  camera.lookAt(p.x + fx * 7, 1.1, p.z + fz * 7);
+  camera.lookAt(p.x + fx * 7, race.camY + 1.1, p.z + fz * 7);
   // gentle widening with speed; the drama comes from a small acceleration kick
   // (zoom-out surge on launch/passing, slight tighten under braking)
   const accel = (p.speed - race.prevSpeed) / Math.max(dt, 1e-4);

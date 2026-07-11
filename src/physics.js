@@ -75,6 +75,12 @@ export class CarSim {
     this.heading = s.heading;
     this.speed = 0;
 
+    // hills plumbing (track elevation is flat for now, so these stay 0):
+    // the car is glued to the road height — no vertical velocity, no jumps
+    this.y = s.elev ?? 0;    // road height under the car
+    this.grade = s.grade ?? 0; // road slope (dy per metre along the road)
+    this.groundPitch = 0;    // rad, ground attitude for the mesh root (+ = nose-down)
+
     this.gear = 1;
     this.rpm = IDLE_RPM;
     this.shiftTimer = 0;
@@ -135,6 +141,7 @@ export class CarSim {
     }
     force -= st.drag * this.speed * this.speed;
     force -= 0.18 * st.mass; // rolling resistance
+    force -= st.mass * 9.8 * (this.grade / Math.hypot(1, this.grade)); // gravity along the slope (0 until hills)
     if (brake > 0) force -= brake * st.mass * 8;
     if (this.offroad) force -= st.mass * (1.2 + this.speed * 0.06);
 
@@ -203,6 +210,14 @@ export class CarSim {
     this.trackDist = proj.dist;
     this.lateral = proj.lateral;
     this.offroad = Math.abs(proj.lateral) > ROAD_HALF_W - 0.8;
+
+    // ride the road surface (ribbon world: nearby off-road shares the
+    // centerline height). Finished cars keep their last y/grade — fine while
+    // everything is flat; revisit if a finish line ever sits on a slope.
+    const surf = this.track.sample(this.trackDist);
+    this.y = surf.elev ?? 0;
+    this.grade = surf.grade ?? 0;
+    this.groundPitch = -Math.atan(this.grade); // uphill tips the nose up
 
     // soft boundary: way off the road, ease the car back (relaxing, not punishing)
     const limit = ROAD_HALF_W + 14;

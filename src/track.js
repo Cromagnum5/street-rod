@@ -44,12 +44,22 @@ export class Track {
     this._rand = rand;
   }
 
-  // Position/heading at distance d along the track.
+  // Position/heading at distance d along the track. `elev` is the road height
+  // and `grade` its slope (dy per metre along the road) — both always 0 until
+  // hills land; they exist now so every consumer is already plumbed. Elevation
+  // is deliberately a function of centerline distance only (a "ribbon world"),
+  // which keeps project() and curvatureAt() plan-view forever.
   sample(d) {
     const f = THREE.MathUtils.clamp(d / STEP, 0, this.points.length - 1.001);
     const i = Math.floor(f), t = f - i;
-    const p = this.points[i].clone().lerp(this.points[i + 1] ?? this.points[i], t);
-    return { pos: p, heading: this.headings[Math.min(i, this.headings.length - 1)] };
+    const b = this.points[i + 1] ?? this.points[i];
+    const p = this.points[i].clone().lerp(b, t);
+    return {
+      pos: p,
+      heading: this.headings[Math.min(i, this.headings.length - 1)],
+      elev: p.y,
+      grade: (b.y - this.points[i].y) / STEP,
+    };
   }
 
   // Curvature magnitude near distance d (for AI corner-speed planning).
@@ -97,8 +107,8 @@ export class Track {
     for (let i = 0; i < pts.length; i++) {
       const nx = Math.cos(hd[i]), nz = -Math.sin(hd[i]); // left normal
       roadPos.push(
-        pts[i].x + nx * ROAD_HALF_W, 0.01, pts[i].z + nz * ROAD_HALF_W,
-        pts[i].x - nx * ROAD_HALF_W, 0.01, pts[i].z - nz * ROAD_HALF_W,
+        pts[i].x + nx * ROAD_HALF_W, pts[i].y + 0.01, pts[i].z + nz * ROAD_HALF_W,
+        pts[i].x - nx * ROAD_HALF_W, pts[i].y + 0.01, pts[i].z - nz * ROAD_HALF_W,
       );
       if (i > 0) {
         const k = i * 2;
@@ -124,17 +134,19 @@ export class Track {
       const d = i * 12 + 6;
       const { pos, heading } = this.sample(d);
       q.setFromAxisAngle(up, heading);
-      m4.compose(new THREE.Vector3(pos.x, 0.02, pos.z), q, s1);
+      m4.compose(new THREE.Vector3(pos.x, pos.y + 0.02, pos.z), q, s1);
       dashes.setMatrixAt(i, m4);
       const nx = Math.cos(heading), nz = -Math.sin(heading);
-      m4.compose(new THREE.Vector3(pos.x + nx * (ROAD_HALF_W - 0.4), 0.02, pos.z + nz * (ROAD_HALF_W - 0.4)), q, new THREE.Vector3(1, 1, 3));
+      m4.compose(new THREE.Vector3(pos.x + nx * (ROAD_HALF_W - 0.4), pos.y + 0.02, pos.z + nz * (ROAD_HALF_W - 0.4)), q, new THREE.Vector3(1, 1, 3));
       edges.setMatrixAt(i * 2, m4);
-      m4.compose(new THREE.Vector3(pos.x - nx * (ROAD_HALF_W - 0.4), 0.02, pos.z - nz * (ROAD_HALF_W - 0.4)), q, new THREE.Vector3(1, 1, 3));
+      m4.compose(new THREE.Vector3(pos.x - nx * (ROAD_HALF_W - 0.4), pos.y + 0.02, pos.z - nz * (ROAD_HALF_W - 0.4)), q, new THREE.Vector3(1, 1, 3));
       edges.setMatrixAt(i * 2 + 1, m4);
     }
     scene.add(dashes, edges);
 
-    // Ground
+    // Ground. NOTE for hills: this flat plane is the one visual that can't
+    // just take y from sample() — it will need to become a skirt that
+    // follows the road ribbon (or sit low enough to hide under it).
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(9000, 9000),
       new THREE.MeshLambertMaterial({ color: palette.ground }));
@@ -161,9 +173,9 @@ export class Track {
       const px = pos.x + nx * off * side, pz = pos.z + nz * off * side;
       const sc = 0.7 + rand() * 0.9;
       q.identity();
-      m4.compose(new THREE.Vector3(px, 1.2 * sc, pz), q, new THREE.Vector3(sc, sc, sc));
+      m4.compose(new THREE.Vector3(px, pos.y + 1.2 * sc, pz), q, new THREE.Vector3(sc, sc, sc));
       trunks.setMatrixAt(i, m4);
-      m4.compose(new THREE.Vector3(px, (2.4 + 1.6) * sc, pz), q, new THREE.Vector3(sc, sc, sc));
+      m4.compose(new THREE.Vector3(px, pos.y + (2.4 + 1.6) * sc, pz), q, new THREE.Vector3(sc, sc, sc));
       crowns.setMatrixAt(i, m4);
     }
     scene.add(trunks, crowns);
@@ -190,7 +202,7 @@ export class Track {
     const poleMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
     for (const s of [-1, 1]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 8), poleMat);
-      pole.position.set(pos.x + nx * (ROAD_HALF_W + 0.6) * s, 3, pos.z + nz * (ROAD_HALF_W + 0.6) * s);
+      pole.position.set(pos.x + nx * (ROAD_HALF_W + 0.6) * s, pos.y + 3, pos.z + nz * (ROAD_HALF_W + 0.6) * s);
       g.add(pole);
     }
     const cv = document.createElement("canvas");
@@ -205,7 +217,7 @@ export class Track {
     const banner = new THREE.Mesh(
       new THREE.PlaneGeometry((ROAD_HALF_W + 0.6) * 2, 1.4),
       new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
-    banner.position.set(pos.x, 5.3, pos.z);
+    banner.position.set(pos.x, pos.y + 5.3, pos.z);
     banner.rotation.y = heading;
     g.add(banner);
     scene.add(g);
