@@ -41,13 +41,45 @@ export class Track {
       z += Math.cos(heading) * STEP;
       segLeft -= STEP;
     }
+
+    // Gentle rolling hills: a second random walk drives slope the way the
+    // one above drives heading. A soft spring toward mid-height turns the
+    // walk into an underdamped oscillator (~500 m wavelength), and elevation
+    // stays in [0, HILL_MAX] so the flat ground plane never shows above the
+    // road. An envelope pins the launch zone and the finish approach to
+    // y = 0 — launch balance stays flat-road, and finished cars coasting
+    // past the line keep a level y/grade (see physics.js).
+    const HILL_MAX = 6;
+    const sm01 = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+    let ey = 0, slope = 0, slopeTarget = 0, hillLeft = 0;
+    for (let i = 0; i < n; i++) {
+      if (hillLeft <= 0) {
+        hillLeft = 140 + rand() * 300;
+        slopeTarget = (rand() - 0.5) * 2 * 0.04; // ≤4% grade wanted; gentle
+        if (rand() < 0.25) slopeTarget = 0;
+      }
+      slope += ((slopeTarget - (ey - HILL_MAX / 2) * 0.012) - slope) * 0.05;
+      ey += slope * STEP;
+      if (ey < 0) { ey = 0; slope = Math.max(slope, 0); }
+      if (ey > HILL_MAX) { ey = HILL_MAX; slope = Math.min(slope, 0); }
+      hillLeft -= STEP;
+      const d = i * STEP;
+      this.points[i].y = ey * sm01((d - 150) / 300) * sm01((lengthM - d - 80) / 300);
+    }
+    // round off the clamp/envelope kinks so grade (piecewise per segment)
+    // never steps visibly in groundPitch
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 1; i < n - 1; i++) {
+        this.points[i].y = (this.points[i - 1].y + 2 * this.points[i].y + this.points[i + 1].y) / 4;
+      }
+    }
+
     this._rand = rand;
   }
 
   // Position/heading at distance d along the track. `elev` is the road height
-  // and `grade` its slope (dy per metre along the road) — both always 0 until
-  // hills land; they exist now so every consumer is already plumbed. Elevation
-  // is deliberately a function of centerline distance only (a "ribbon world"),
+  // and `grade` its slope (dy per metre along the road). Elevation is
+  // deliberately a function of centerline distance only (a "ribbon world"),
   // which keeps project() and curvatureAt() plan-view forever.
   sample(d) {
     const f = THREE.MathUtils.clamp(d / STEP, 0, this.points.length - 1.001);
@@ -100,7 +132,35 @@ export class Track {
 
   buildMeshes(scene, palette) {
     const rand = this._rand;
-    const pts = this.points, hd = this.headings;
+
+    // The drivable track spans d ∈ [0, length], but the visible road gets a
+    // straight, flat run-up before the start line and run-off past the
+    // finish (both ends sit at y ≈ 0 thanks to the elevation envelope), so
+    // the world doesn't dead-end in grass behind the staging line or under
+    // cars coasting out past the flag. Visual only — sample()/project()
+    // and everything physics/AI touch still see [0, length].
+    // POST is long because raceTick keeps coasting the cars behind the
+    // results overlay (brake 0.3 ≈ 2.4 m/s² — a top-tier car can roll
+    // ~700 m before it's crawling), and fog swallows the far end anyway
+    const PRE = 400, POST = 900;
+    const pts = [], hd = [];
+    const first = this.points[0], last = this.points[this.points.length - 1];
+    const h0 = this.headings[0], h1 = this.headings[this.headings.length - 1];
+    for (let i = Math.round(PRE / STEP); i >= 1; i--) {
+      pts.push(new THREE.Vector3(first.x - Math.sin(h0) * STEP * i, first.y, first.z - Math.cos(h0) * STEP * i));
+      hd.push(h0);
+    }
+    pts.push(...this.points); hd.push(...this.headings);
+    for (let i = 1; i <= Math.round(POST / STEP); i++) {
+      pts.push(new THREE.Vector3(last.x + Math.sin(h1) * STEP * i, last.y, last.z + Math.cos(h1) * STEP * i));
+      hd.push(h1);
+    }
+    // sample() over the extended span: straight flat extrapolation off-ends
+    const sampleExt = (d) => {
+      if (d >= 0 && d <= this.length) return this.sample(d);
+      const p = d < 0 ? first : last, h = d < 0 ? h0 : h1, o = d < 0 ? d : d - this.length;
+      return { pos: new THREE.Vector3(p.x + Math.sin(h) * o, p.y, p.z + Math.cos(h) * o), heading: h, grade: 0 };
+    };
 
     // Road ribbon
     const roadPos = [], roadIdx = [];
@@ -112,7 +172,10 @@ export class Track {
       );
       if (i > 0) {
         const k = i * 2;
-        roadIdx.push(k - 2, k, k - 1, k, k + 1, k - 1);
+        // wound to face up — this was backwards (face-down, so culled) from
+        // day one; the flat ground plane between the edge lines passed as
+        // asphalt until hills opened a gap under the road
+        roadIdx.push(k - 2, k - 1, k, k, k - 1, k + 1);
       }
     }
     const roadGeo = new THREE.BufferGeometry();
@@ -125,15 +188,17 @@ export class Track {
     const dashGeo = new THREE.PlaneGeometry(0.35, 4);
     dashGeo.rotateX(-Math.PI / 2);
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
-    const nDash = Math.floor(this.length / 12);
+    const nDash = Math.floor((PRE + this.length + POST) / 12);
     const dashes = new THREE.InstancedMesh(dashGeo, dashMat, nDash);
     const edgeMat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
     const edges = new THREE.InstancedMesh(dashGeo, edgeMat, nDash * 2);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), s1 = new THREE.Vector3(1, 1, 1);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s1 = new THREE.Vector3(1, 1, 1);
+    const eul = new THREE.Euler(0, 0, 0, "YXZ"); // yaw then pitch, like the car roots
     for (let i = 0; i < nDash; i++) {
-      const d = i * 12 + 6;
-      const { pos, heading } = this.sample(d);
-      q.setFromAxisAngle(up, heading);
+      const d = -PRE + i * 12 + 6;
+      const { pos, heading, grade } = sampleExt(d);
+      eul.set(-Math.atan(grade), heading, 0); // lie on the slope, not chord through it
+      q.setFromEuler(eul);
       m4.compose(new THREE.Vector3(pos.x, pos.y + 0.02, pos.z), q, s1);
       dashes.setMatrixAt(i, m4);
       const nx = Math.cos(heading), nz = -Math.sin(heading);
@@ -144,14 +209,42 @@ export class Track {
     }
     scene.add(dashes, edges);
 
-    // Ground. NOTE for hills: this flat plane is the one visual that can't
-    // just take y from sample() — it will need to become a skirt that
-    // follows the road ribbon (or sit low enough to hide under it).
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(9000, 9000),
-      new THREE.MeshLambertMaterial({ color: palette.ground }));
+    // Ground: a terrain skirt rides the ribbon (flat at road height out past
+    // the tree line, then falling below the flat plane so the hand-off seam
+    // hides — same material both sides), and the plane itself sits under the
+    // lowest road (elevation never goes below 0) filling out to the horizon.
+    const SKIRT_MID = 62;  // covers the tree band (offsets reach ~58 m)
+    const SKIRT_OUT = 100; // must stay under the tightest curve radius (~1/0.009 m) or the band folds
+    // columns per station, by lateral offset; the ±7 pair leaves the road's
+    // lane out of the skirt — a strip spanning it would chord the elevation
+    // profile in 124 m triangles and surface above the ribbon on graded curves
+    const SKIRT_COLS = [-SKIRT_OUT, -SKIRT_MID, -7, 7, SKIRT_MID, SKIRT_OUT];
+    const groundMat = new THREE.MeshLambertMaterial({ color: palette.ground });
+    const skPos = [], skIdx = [];
+    for (let i = 0; i < pts.length; i++) {
+      const nx = Math.cos(hd[i]), nz = -Math.sin(hd[i]);
+      for (const off of SKIRT_COLS) {
+        const outer = Math.abs(off) === SKIRT_OUT;
+        skPos.push(pts[i].x + nx * off, outer ? -1.2 : pts[i].y - 0.02, pts[i].z + nz * off);
+      }
+      if (i > 0) {
+        const k = i * SKIRT_COLS.length;
+        for (let c = 0; c < SKIRT_COLS.length - 1; c++) {
+          if (c === 2) continue; // the road lane
+          const a = k - SKIRT_COLS.length + c, b = k + c;
+          skIdx.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+    }
+    const skGeo = new THREE.BufferGeometry();
+    skGeo.setAttribute("position", new THREE.Float32BufferAttribute(skPos, 3));
+    skGeo.setIndex(skIdx);
+    skGeo.computeVertexNormals();
+    scene.add(new THREE.Mesh(skGeo, groundMat));
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.05;
+    ground.position.y = -0.08;
     const mid = this.sample(this.length / 2).pos;
     ground.position.x = mid.x; ground.position.z = mid.z;
     scene.add(ground);
@@ -161,12 +254,12 @@ export class Track {
     const crownGeo = new THREE.ConeGeometry(1.9, 4.2, 7);
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a4327 });
     const crownMat = new THREE.MeshLambertMaterial({ color: palette.tree });
-    const nTree = Math.floor(this.length / 14);
+    const nTree = Math.floor((PRE + this.length + POST) / 14);
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, nTree);
     const crowns = new THREE.InstancedMesh(crownGeo, crownMat, nTree);
     for (let i = 0; i < nTree; i++) {
-      const d = rand() * this.length;
-      const { pos, heading } = this.sample(d);
+      const d = -PRE + rand() * (PRE + this.length + POST);
+      const { pos, heading } = sampleExt(d);
       const side = rand() < 0.5 ? -1 : 1;
       const off = ROAD_HALF_W + 6 + rand() * 45;
       const nx = Math.cos(heading), nz = -Math.sin(heading);
@@ -180,14 +273,27 @@ export class Track {
     }
     scene.add(trunks, crowns);
 
-    // Distant mountains
+    // Distant mountains — rerolled off the road corridor: straighter seeds
+    // put the track ends (plus the run-up/run-off) out among the cones, and
+    // a road dead-ending into a mountain wall right past the flag is exactly
+    // what the results camera lingers on
     const mtnMat = new THREE.MeshLambertMaterial({ color: palette.mountain });
     for (let i = 0; i < 14; i++) {
-      const ang = (i / 14) * Math.PI * 2 + rand();
-      const r = 1400 + rand() * 800;
-      const h = 180 + rand() * 260;
+      let x, z, h;
+      for (let tries = 0; tries < 12; tries++) {
+        const ang = (i / 14) * Math.PI * 2 + rand();
+        const r = 1400 + rand() * 800;
+        h = 180 + rand() * 260;
+        x = mid.x + Math.sin(ang) * r; z = mid.z + Math.cos(ang) * r;
+        let clear = true;
+        for (let j = 0; j < pts.length; j += 20) { // every 100 m incl. extensions
+          const dx = pts[j].x - x, dz = pts[j].z - z;
+          if (dx * dx + dz * dz < (h * 1.7 + 140) ** 2) { clear = false; break; }
+        }
+        if (clear) break; // else keep the last roll — best effort
+      }
       const mtn = new THREE.Mesh(new THREE.ConeGeometry(h * 1.7, h, 5), mtnMat);
-      mtn.position.set(mid.x + Math.sin(ang) * r, h / 2 - 12, mid.z + Math.cos(ang) * r);
+      mtn.position.set(x, h / 2 - 12, z);
       scene.add(mtn);
     }
 

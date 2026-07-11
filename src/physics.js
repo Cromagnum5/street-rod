@@ -87,7 +87,6 @@ export class CarSim {
     this.heading = s.heading;
     this.speed = 0;
 
-    // hills plumbing (track elevation is flat for now, so these stay 0):
     // the car is glued to the road height — no vertical velocity, no jumps
     this.y = s.elev ?? 0;    // road height under the car
     this.grade = s.grade ?? 0; // road slope (dy per metre along the road)

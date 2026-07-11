@@ -50,16 +50,34 @@ sound is synthesized live with the Web Audio API.
 - `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
-  hint)`. `sample` also returns `elev`/`grade` — hills prep (2026-07-11),
-  always 0 until a track sets point `y`s. Elevation is deliberately a
-  function of centerline distance only (ribbon world: nearby off-road
-  shares the road height) so `project`/`curvatureAt` stay plan-view math
-  forever. `CarSim` rides the surface (`y`/`grade`/`groundPitch`, no
-  vertical velocity — no jumps by design), race-mesh roots take ground
-  pitch (their `rotation.order` is `"YXZ"` for the same reason as wheels),
-  and the camera height rides `race.camY`, a slow-smoothed copy of car y.
-  The flat ground plane is the one visual that can't take y from
-  `sample()` — it needs a skirt following the ribbon when hills land.
+  hint)`. `sample` also returns `elev`/`grade` — gentle rolling hills landed
+  2026-07-11: a slope random walk with a soft spring toward mid-height
+  (underdamped, ~500 m wavelength), elevation confined to [0, 6 m] so the
+  flat ground plane never shows above the road, grades ≲4%, a smoothstep
+  envelope pinning the launch zone and finish approach to y = 0 (launch
+  balance stays flat-road; finished cars coast level), and 3 smoothing
+  passes so per-segment grade never steps visibly in `groundPitch`.
+  Elevation is deliberately a function of centerline distance only (ribbon
+  world: nearby off-road shares the road height) so `project`/`curvatureAt`
+  stay plan-view math forever. `CarSim` rides the surface
+  (`y`/`grade`/`groundPitch`, no vertical velocity — no jumps by design),
+  race-mesh roots take ground pitch (their `rotation.order` is `"YXZ"` for
+  the same reason as wheels), the camera height rides `race.camY`, a
+  slow-smoothed copy of car y, and dash/edge-line instances pitch with
+  `grade` so they lie on the slope. The ground is a terrain skirt riding
+  the ribbon (flat at road height to ±62 m, past the tree band, then
+  falling to y=−1.2 by ±100 m to dip under the 9000 m plane — same
+  material, so the seam is invisible). Two skirt constraints: the outer
+  edge must stay inside the tightest curve radius (~1/0.009 m) or the band
+  folds over itself, and the strips leave the ±7 m lane to the road
+  ribbon — a strip spanning it chords the elevation in 124 m triangles
+  and surfaces above the asphalt on graded curves. The visible road also
+  runs 400 m before the start and 900 m past the finish (straight and
+  flat, `buildMeshes` only — physics/AI still see [0, length]; the
+  run-off is long because raceTick keeps coasting the cars behind the
+  results overlay at brake 0.3). Mountains reroll placement (≤12 tries)
+  if their footprint touches the extended road corridor — straighter
+  seeds put the run-off out among the cones.
 - `src/physics.js` — `CarSim`: scalar speed + heading, traction-limited
   launch, drag-limited top speed, grip-capped steering with speed scrub,
   automatic gearbox (RPM drives the audio), sprung-body roll/pitch (see
@@ -262,6 +280,13 @@ cornering-scrub and finish-teleport numbers precisely.
   XYZ order tumbles the yawed wheel with the spin angle and steered fronts
   wobble once per revolution (fixed `8b22178`).
 
+- The road ribbon's triangles were wound face-down (culled, never rendered)
+  from the first commit until 2026-07-11 — the "asphalt" everyone saw was
+  the ground plane between the edge lines. Nobody's eyes caught it because
+  the composition still read as a road; it only surfaced when hills opened
+  a gap under the lane. Same lesson family as the banner-mirror one:
+  perception tests need an objective proxy (here, pixel-comparing road
+  center vs offroad in headless screenshots — they were byte-identical).
 - `/home/cromulon` briefly had a stray commit-less `.git` (deleted
   2026-07-10). If `git add -A` ever stages home-dir files again, stop —
   wrong repo root.
