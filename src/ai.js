@@ -11,6 +11,7 @@
 // spline.
 
 import { ROAD_HALF_W } from "./track.js";
+import { POWER_GRIP_FLOOR } from "./physics.js";
 
 export class AIDriver {
   constructor(car, track, skill, lanePreference = 2.5) {
@@ -62,6 +63,22 @@ export class AIDriver {
     if (car.speed < targetSpeed - 1) throttle = 1;
     else if (car.speed > targetSpeed + 2) brake = Math.min(1, (car.speed - targetSpeed) / 8);
     else throttle = 0.55;
+
+    // friction-circle awareness: throttle eats lateral grip (physics.js), so
+    // budget the corner-throttle duty by how much grip this car's pedal
+    // actually eats. Near-stock cars barely load the circle and keep their
+    // pace; a built machine lifts and coasts through its binding corners.
+    // load vs the car's real grip (not the skill-discounted planning grip):
+    // low-skill margin is genuine headroom, don't lift inside it
+    const kNow = this.track.curvatureAt(car.trackDist + car.speed * 0.4);
+    const realLoad = kNow * car.speed * car.speed / (car.stats.cornerGrip ?? car.stats.grip);
+    const instLoad = Math.min(1, car.stats.power / Math.max(car.speed, 5) / (car.stats.grip * car.stats.mass));
+    const shareOn = Math.max(POWER_GRIP_FLOOR, Math.sqrt(1 - instLoad * instLoad)); // lateral share left while the pedal is down
+    // 0.95: lift a beat early — high-skill planners run ~2% grip margin and
+    // need the anticipation; low-skill plans sit far below this anyway
+    if (realLoad > 0.5 && shareOn < 0.995) {
+      throttle = Math.min(throttle, Math.max(0, (0.95 - realLoad) / (1 - shareOn)));
+    }
 
     // low-skill drivers breathe the throttle
     if (this.skill < 0.6) throttle *= 0.88 + 0.12 * Math.sin(this.t * 1.3 + this.wobblePhase);

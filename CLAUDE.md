@@ -50,7 +50,16 @@ sound is synthesized live with the Web Audio API.
 - `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
-  hint)`.
+  hint)`. `sample` also returns `elev`/`grade` — hills prep (2026-07-11),
+  always 0 until a track sets point `y`s. Elevation is deliberately a
+  function of centerline distance only (ribbon world: nearby off-road
+  shares the road height) so `project`/`curvatureAt` stay plan-view math
+  forever. `CarSim` rides the surface (`y`/`grade`/`groundPitch`, no
+  vertical velocity — no jumps by design), race-mesh roots take ground
+  pitch (their `rotation.order` is `"YXZ"` for the same reason as wheels),
+  and the camera height rides `race.camY`, a slow-smoothed copy of car y.
+  The flat ground plane is the one visual that can't take y from
+  `sample()` — it needs a skirt following the ribbon when hills land.
 - `src/physics.js` — `CarSim`: scalar speed + heading, traction-limited
   launch, drag-limited top speed, grip-capped steering with speed scrub,
   automatic gearbox (RPM drives the audio), sprung-body roll/pitch (see
@@ -121,17 +130,45 @@ sound is synthesized live with the Web Audio API.
 - Getting loose (Jason playtested + approved 2026-07-10): past the grip
   limit the path still bends at the grip cap, but the nose keeps 60% of the
   excess yaw, opening a slip angle — a slide instead of hard understeer.
-  Slip is capped (`SLIP_MAX` 0.30 rad) and self-recovering (`SLIP_RECOVER`
-  bites it back in ~0.3 s; the bite bends the path — the drift-exit hook),
-  so there are no spinouts. Position integrates along `heading - slip`, and
-  the chase camera follows that velocity direction so the drift angle shows
-  in frame. `screech` is now a smoothed 0..1 slide signal (launch wheelspin
-  chirps count; offroad mutes it ×0.15 — dirt doesn't squeal). `SkidSound`
-  is two-stage: thin ~2 kHz warbling chirp at slide onset, pitch sinking +
-  a 620 Hz scrub layer past 0.4 intensity. Knobs: `SLIP_*` in physics.js,
-  layer gains/freqs in `SkidSound`. The 16-seed boss AI sim got *better*
-  under this model (offroad 16.5→8.2 s/race, same harness, ~2.5 s faster) —
-  the nose rotating into the corner makes pure pursuit unwind earlier.
+  Slip is capped (`SLIP_MAX`, now 0.55 rad) and self-recovering
+  (`SLIP_RECOVER` bites it back in ~0.3 s; the bite bends the path — the
+  drift-exit hook), so there are no spinouts. Position integrates along
+  `heading - slip`, and the chase camera follows that velocity direction so
+  the drift angle shows in frame. `screech` is a smoothed 0..1 slide signal
+  (launch wheelspin chirps count; offroad mutes it ×0.15 — dirt doesn't
+  squeal). `SkidSound` is two-stage: thin ~2 kHz warbling chirp at slide
+  onset, pitch sinking + a 620 Hz scrub layer past 0.4 intensity.
+- Power drifting via friction circle (Jason playtested + approved
+  2026-07-11, "drift fest"): drive force and cornering share one tire
+  budget — `powerLoad` shrinks the lateral share (`latShare`, floored at
+  `POWER_GRIP_FLOOR` 0.40), so throttle mid-corner opens the slip model and
+  the car power-slides; weak cars can't load the circle at corner speed and
+  stay hooked (crap tires + big motor = maximum drift, and that emergent
+  ladder is the point — no per-car drift tuning). The throttle also holds
+  off 92% of slip recovery (`SLIP_THROTTLE_HOLD`) — foot down sustains the
+  drift, lifting snaps it straight — and hanging sideways bleeds speed
+  (`SLIP_SCRUB`, capped 20%/s), which is the "consequence" in place of
+  spinouts (still none — Jason's rule stands; literal spinouts were offered
+  2026-07-11 and left open, not declined). Braking is exempt from the
+  circle: trail-braking always grips. Full-squeal intensity is
+  `SLIP_SQUEAL` (0.30 rad), not `SLIP_MAX`. The AI got matching
+  friction-circle awareness in `ai.js`: it budgets corner-throttle duty by
+  `(0.95 - realLoad) / (1 - shareOn)` — realLoad measured against the
+  car's *physical* `cornerGrip` (not the skill-discounted planning grip,
+  which made street racers lift inside genuine margin and cost them ~2
+  s/race), shareOn floored at the imported `POWER_GRIP_FLOOR`, and the
+  0.95 is anticipation the ~2%-margin boss needs. 16-seed sim: tier-6 boss
+  offroad 3.14→2.71 s/race (improved again — lift-and-coast tightens its
+  line), boss ~2 s slower overall (acceptable, watch it), street racers
+  bit-identical pace, AI slip peaks ≤0.03 rad (opponents never drift by
+  accident).
+- `SkidSound` gains are deliberately ≫1 (0.35+2.0x sing, 0.8 scrub): its
+  Q=8 bandpass keeps ~1% of the noise power, so unity-ish gain sits ~30 dB
+  under the engine voice. The original 0.015–0.11 gains shipped physically
+  playing but inaudible — Jason had never heard the squeal (fixed
+  2026-07-11, verified with AnalyserNode RMS ≈ engine level mid-drift).
+  Lesson, same family as the banner-mirror one: sim numbers and screenshots
+  can't hear — audio changes need Jason's ears (or at least an RMS check).
 - Gearboxes are all automatics — the sim auto-shifts, so part names must
   not say "Manual" (Jason's call, 2026-07-10). Gear count is
   `max(tier.gears + closeRatioBonus, level.minGears)` in `effectiveStats`;
@@ -185,7 +222,8 @@ cornering-scrub and finish-teleport numbers precisely.
 - Player steering is smoothed in `raceTick` (`race.steer` ramps ~0.25 s to
   full lock) because digital keys at full lock always exceed grip; the
   smoothed value also drives the front-wheel visuals. Over-grip speed scrub
-  in physics is deliberately gentle (10%/s cap).
+  in physics is deliberately gentle (10%/s cap); the separate slip-angle
+  scrub (`SLIP_SCRUB`) stacks on top when sideways.
 - Wheel groups get both accumulated spin (`rotation.x += …`) and steer yaw
   (`rotation.y =`) on the same Euler, so `addWheels()` sets
   `rotation.order = "YXZ"` (yaw wraps spin). Don't remove it — the default

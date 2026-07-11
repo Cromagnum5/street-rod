@@ -179,10 +179,13 @@ export class SkidSound {
     // pitch sinks as the slide deepens; warble widens with it
     this.sing.f.frequency.setTargetAtTime(2100 - 750 * x, t, 0.06);
     this.lfoGain.gain.setTargetAtTime(on ? 40 + 110 * x : 0, t, 0.06);
-    this.sing.g.gain.setTargetAtTime(on ? 0.015 + 0.095 * x : 0, t, 0.04);
+    // gains way over 1 on purpose: a Q=8 bandpass keeps only ~1% of the
+    // noise power, so unity gain here is ~30 dB under the engine voice —
+    // the original 0.015+0.095x was physically playing but inaudible
+    this.sing.g.gain.setTargetAtTime(on ? 0.35 + 2.0 * x : 0, t, 0.04);
     // scrub layer only past the onset zone — the "fully sliding" voice
     const deep = Math.max(0, (x - 0.4) / 0.6);
-    this.scrub.g.gain.setTargetAtTime(deep * 0.07, t, 0.05);
+    this.scrub.g.gain.setTargetAtTime(deep * 0.8, t, 0.05);
   }
 }
 

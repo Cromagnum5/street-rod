@@ -17,9 +17,21 @@ const ROLL_GRIP_LOSS_CAP = 0.15; // forgiving: never lose more than 15%
 // Getting loose: past the grip limit the path bends at the grip cap while the
 // nose keeps some of the extra rotation, so a slip angle opens up instead of
 // hard understeer. Capped and self-recovering — a slide, never a spinout.
-const SLIP_MAX = 0.30;      // rad — biggest drift angle the car can hang out
+const SLIP_MAX = 0.55;      // rad (~31°) — biggest drift angle; only power holds you there
 const SLIP_YAW_KEEP = 0.6;  // fraction of over-limit yaw the nose keeps
 const SLIP_RECOVER = 3.2;   // 1/s — how fast the tires bite the slide back in line
+const SLIP_SQUEAL = 0.30;   // rad of slip that reads as a full-intensity squeal
+const SLIP_SCRUB = 0.35;    // /s per rad — hanging sideways bleeds speed (roasting tires isn't free)
+const SLIP_SCRUB_CAP = 0.20; // but never a wall: worst case 20%/s
+
+// Friction circle: drive force and cornering share one tire budget, so a car
+// with power to spare can steer with the throttle — stab it mid-corner and
+// the lateral share shrinks, the slip model opens, and it power-slides.
+// Weak cars can't load the circle at corner speeds, so they stay hooked up.
+// Floored so full throttle never kills cornering outright (stays forgiving);
+// braking is deliberately exempt from the circle — trail-braking always grips.
+export const POWER_GRIP_FLOOR = 0.40; // lateral share is never squeezed below this (AI imports it)
+const SLIP_THROTTLE_HOLD = 0.92; // how much of the slip recovery a lit throttle holds off
 
 // Steady-state cornering grip once body roll has set in — what the car can
 // actually hold mid-corner. Used by the AI's corner-speed planner too.
@@ -130,9 +142,12 @@ export class CarSim {
     this.throttleOut = throttle;
 
     // ----- longitudinal -----
-    let force = 0, wheelspin = 0;
+    let force = 0, wheelspin = 0, powerLoad = 0;
     if (throttle > 0) {
       force = throttle * st.power / Math.max(this.speed, 5);
+      // fraction of the total tire budget the drive wheels are asking for —
+      // feeds the friction circle in the steering section below
+      powerLoad = Math.min(1, force / (st.grip * st.mass));
       const tractionCap = st.grip * st.mass * 0.95;
       if (force > tractionCap) {
         wheelspin = Math.min(1, (force / tractionCap - 1) * 0.8); // launch chirp
@@ -157,7 +172,11 @@ export class CarSim {
     // load transfer: a rolled body overloads the outside tires. Because roll
     // lags and (softly sprung) overshoots, flick transitions cost extra grip.
     const rollLoss = Math.min(ROLL_GRIP_LOSS_CAP, ROLL_GRIP_LOSS * Math.abs(this.roll));
-    const gripAvail = (this.offroad ? st.grip * 0.55 : st.grip) * (1 - rollLoss);
+    // friction circle (see POWER_GRIP_FLOOR above): what the throttle takes,
+    // cornering loses. latShare 1 = coasting, POWER_GRIP_FLOOR = wheels lit.
+    const latShare = Math.max(POWER_GRIP_FLOOR, Math.sqrt(Math.max(0, 1 - powerLoad * powerLoad)));
+    const powerEat = (1 - latShare) / (1 - POWER_GRIP_FLOOR); // 0..1 throttle pressure on the tires
+    const gripAvail = (this.offroad ? st.grip * 0.55 : st.grip) * (1 - rollLoss) * latShare;
     // fastest the tires can actually bend the car's path (rad/s)
     const velYawMax = gripAvail / Math.max(this.speed, 4);
     let velYaw = yawRate;   // how fast the velocity direction turns
@@ -173,9 +192,13 @@ export class CarSim {
     // slip angle: nose vs path. Grows while sliding; the tires bite it back
     // toward zero, and that bite bends the path (the drift-exit hook).
     this.slip += (yawRate - velYaw) * dt;
-    this.slip -= this.slip * Math.min(1, SLIP_RECOVER * dt);
+    // the tires bite the slide back in line — unless the throttle keeps them
+    // lit: foot down holds the drift, lifting snaps the recovery to full
+    this.slip -= this.slip * Math.min(1, SLIP_RECOVER * (1 - SLIP_THROTTLE_HOLD * powerEat) * dt);
     this.slip = Math.max(-SLIP_MAX, Math.min(SLIP_MAX, this.slip));
-    slide = Math.max(slide, Math.abs(this.slip) / SLIP_MAX);
+    // sideways is slow: a held drift trades speed for the angle
+    this.speed *= 1 - Math.min(SLIP_SCRUB_CAP, Math.abs(this.slip) * SLIP_SCRUB) * dt;
+    slide = Math.max(slide, Math.min(1, Math.abs(this.slip) / SLIP_SQUEAL));
     if (this.offroad) slide *= 0.15;
     // squeal envelope: near-instant attack, short tail so chirps ring a touch
     this.screech += (slide - this.screech) * Math.min(1, dt * (slide > this.screech ? 30 : 5));
