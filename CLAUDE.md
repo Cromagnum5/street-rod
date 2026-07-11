@@ -187,6 +187,10 @@ sound is synthesized live with the Web Audio API.
   2026-07-11, verified with AnalyserNode RMS ≈ engine level mid-drift).
   Lesson, same family as the banner-mirror one: sim numbers and screenshots
   can't hear — audio changes need Jason's ears (or at least an RMS check).
+  Then Jason heard it and found it annoying: **both layers are muted**
+  (gains pinned to 0 in `update()`, 2026-07-11) — node graph and the
+  `screech` intensity plumbing kept for a future retune. Don't un-mute
+  without his say-so.
 - Car contact (Jason playtested + approved 2026-07-11, "push on the other
   car in realistic ways"): each car is two circles (nose/tail,
   `CONTACT_END`/`CONTACT_R` in physics.js), and the reaction depends on the
