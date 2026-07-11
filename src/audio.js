@@ -207,6 +207,21 @@ export class RumbleSound {
   }
 }
 
+// Car-contact thump: a sine drop for the body shell + a bandpass noise
+// rattle for the sheet metal. intensity 0..1 (scaled from closing speed).
+export function clunk(intensity = 0.5) {
+  const c = audioContext(), t = c.currentTime;
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(150 + 90 * intensity, t);
+  o.frequency.exponentialRampToValueAtTime(48, t + 0.13);
+  g.gain.setValueAtTime(0.25 + 0.45 * intensity, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  o.connect(g); g.connect(c.destination);
+  o.start(t); o.stop(t + 0.25);
+  click(0.3 + 0.5 * intensity, 900, 0.05);
+}
+
 export function beep(freq, dur = 0.14, type = "square", vol = 0.18) {
   const c = audioContext();
   const o = c.createOscillator(), g = c.createGain();

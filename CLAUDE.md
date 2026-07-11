@@ -169,6 +169,28 @@ sound is synthesized live with the Web Audio API.
   2026-07-11, verified with AnalyserNode RMS ≈ engine level mid-drift).
   Lesson, same family as the banner-mirror one: sim numbers and screenshots
   can't hear — audio changes need Jason's ears (or at least an RMS check).
+- Car contact (Jason playtested + approved 2026-07-11, "push on the other
+  car in realistic ways"): each car is two circles (nose/tail,
+  `CONTACT_END`/`CONTACT_R` in physics.js), and the reaction depends on the
+  event, not just geometry. Leaning/rubbing = eased position pushes only
+  (`CONTACT_RELAX`), silent and smooth. A *hit* — contact onset above
+  `CONTACT_TAP` closing speed, or `CONTACT_SLAM` mid-contact, both gated by
+  a 0.5 s per-pair cooldown — kicks heading+slip together (travel direction
+  unchanged; `SLIP_RECOVER` plays the recovery like a drift exit, so a
+  rear-quarter tap fishtails catchably), sheds speed by `CONTACT_SCRUB`,
+  and clunks (`sfx.clunk`, rate-limited in raceTick). Kicks are
+  depth-weighted torque across all touching circle pairs so door-to-door
+  torques cancel — side pressure shoves, only a lone corner clip yaws.
+  Three stutter bugs were fixed in one session (deepest-pair flip-flop,
+  per-frame micro-kicks, slam-threshold feedback loop pinning impact at
+  exactly 5.00) — measure with the rub harness (4 s steer-into-contact,
+  count lateral sign flips + hit events) before touching this code.
+  KNOWN ISSUE (Jason, 2026-07-11): occasional stutter while rubbing
+  remains. Prime suspect: the instant per-hit speed cut (`punch *
+  CONTACT_SCRUB`, up to ~25% in one frame) — the camera's accel-driven FOV
+  kick reacts to that speed step, which may read as a hitch even though
+  positions are smooth. Untested hypothesis. `_contact`/`_hitCool` are
+  pair state on the first car — fine for 2 cars, needs a pair key for 3+.
 - Gearboxes are all automatics — the sim auto-shifts, so part names must
   not say "Manual" (Jason's call, 2026-07-10). Gear count is
   `max(tier.gears + closeRatioBonus, level.minGears)` in `effectiveStats`;

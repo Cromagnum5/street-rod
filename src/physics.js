@@ -261,17 +261,97 @@ export class CarSim {
   }
 }
 
-// Soft car-vs-car separation. Pushes both cars apart laterally; tiny speed penalty.
+// Car-vs-car contact. Each car is two circles (front/rear), so which end
+// takes the hit decides the reaction: door-to-door rubs just push apart,
+// clipping a quarter panel knocks the nose/tail around and the slip model
+// plays the recovery — a shove, never a wreck (kick capped, slip capped,
+// self-recovering). Returns the closing speed (m/s) for impact effects.
+const CONTACT_END = 1.3;    // circle centers sit this far fore/aft of car center
+const CONTACT_R = 1.15;     // circle radius; pair sum 2.3 ≈ car width
+const CONTACT_KICK = 0.03;  // rad of nose/tail kick per m/s of closing speed
+const CONTACT_KICK_CAP = 0.25;
+const CONTACT_SCRUB = 0.04; // speed fraction shed per m/s of closing speed
+const CONTACT_TAP = 1.2;    // m/s closing speed below which it's a rub, not a hit
+const CONTACT_SLAM = 5;     // m/s that counts as a fresh hit even mid-contact
+const CONTACT_RELAX = 10;   // 1/s — separation eases out instead of snapping
+
 export function resolveContact(a, b, dt) {
-  const dx = a.x - b.x, dz = a.z - b.z;
-  const d2 = dx * dx + dz * dz;
-  const minD = 2.6;
-  if (d2 > minD * minD || d2 === 0) return;
-  const d = Math.sqrt(d2);
-  const push = (minD - d) * 0.5;
-  const nx = dx / d, nz = dz / d;
-  a.x += nx * push; a.z += nz * push;
-  b.x -= nx * push; b.z -= nz * push;
+  const cdx = a.x - b.x, cdz = a.z - b.z;
+  const reach = 2 * (CONTACT_END + CONTACT_R);
+  if (cdx * cdx + cdz * cdz > reach * reach) return 0;
+
+  const ends = (c) => {
+    const fx = Math.sin(c.heading), fz = Math.cos(c.heading);
+    return [
+      { x: c.x + fx * CONTACT_END, z: c.z + fz * CONTACT_END, end: 1 },  // nose
+      { x: c.x - fx * CONTACT_END, z: c.z - fz * CONTACT_END, end: -1 }, // tail
+    ];
+  };
+  // Every overlapping circle pair pushes (eased, so door-to-door rubbing is
+  // a steady lean instead of a per-frame snap — resolving only the deepest
+  // pair made the winner flip-flop between nose and tail every frame, which
+  // read as stuttering while rubbing). The deepest pair alone decides the
+  // impact reaction.
+  let hit = null;
+  // depth-weighted torque per car: a lone corner clip yaws hard, but a full
+  // door-to-door contact touches both ends and their torques cancel — side
+  // pressure translates the car, it doesn't spin it
+  let torqueA = 0, torqueB = 0, depthSum = 0;
+  const relax = Math.min(1, dt * CONTACT_RELAX);
+  for (const pa of ends(a)) for (const pb of ends(b)) {
+    const dx = pa.x - pb.x, dz = pa.z - pb.z;
+    const d2 = dx * dx + dz * dz, minD = CONTACT_R * 2;
+    if (d2 >= minD * minD || d2 === 0) continue;
+    const d = Math.sqrt(d2), depth = minD - d, nx = dx / d, nz = dz / d;
+    const push = depth * 0.5 * relax;
+    a.x += nx * push; a.z += nz * push;
+    b.x -= nx * push; b.z -= nz * push;
+    torqueA += depth * pa.end * (nx * Math.cos(a.heading) - nz * Math.sin(a.heading));
+    torqueB += depth * pb.end * -(nx * Math.cos(b.heading) - nz * Math.sin(b.heading));
+    depthSum += depth;
+    if (!hit || depth > hit.depth) hit = { depth, nx, nz, ea: pa.end, eb: pb.end };
+  }
+  a._hitCool = Math.max(0, (a._hitCool ?? 0) - dt);
+  if (!hit) { a._contact = false; return 0; }
+  // a "hit" is the moment contact begins (or a genuine mid-contact slam);
+  // everything after that is leaning, however hard the steer pushes. The
+  // cooldown stops leaning from reading as a bang-chase-bang cycle: a kick
+  // knocks the other car away, the steer closes back in, and that re-touch
+  // must not thump again. _contact/_hitCool are pair state stashed on the
+  // first car — fine for a 2-car race, needs a pair key for a third car.
+  const canHit = a._hitCool <= 0; // cooldown gates slams too — without it a
+  // mutual-steer grind hovers at the slam threshold and machine-guns kicks
+  const fresh = !a._contact;
+  a._contact = true;
+
+  // closing speed along the deepest normal is the "impulse": it collapses to
+  // ~0 once separated, so a tap and a slam produce different numbers without
+  // tracking any contact state
+  const vax = Math.sin(a.heading - a.slip) * a.speed, vaz = Math.cos(a.heading - a.slip) * a.speed;
+  const vbx = Math.sin(b.heading - b.slip) * b.speed, vbz = Math.cos(b.heading - b.slip) * b.speed;
+  const impact = Math.max(0, -((vax - vbx) * hit.nx + (vaz - vbz) * hit.nz));
+
+  // Real hits knock the hit end sideways: heading and slip move together so
+  // the travel direction is untouched — then SLIP_RECOVER straightens the
+  // car out just like a drift exit. A nose hit steers the car away, a tail
+  // hit fishtails it. Sustained rubbing gets pushes only, no kicks —
+  // per-frame micro-kicks were the other half of the rubbing stutter, and
+  // steering hard into a car mid-rub legitimately builds >CONTACT_TAP of
+  // closing speed, so the onset flag (not the speed) is what gates here.
+  const isHit = canHit && impact > CONTACT_TAP && (fresh || impact > CONTACT_SLAM);
+  if (isHit) {
+    a._hitCool = 0.5;
+    const punch = impact - CONTACT_TAP; // only the speed beyond "touch" hits
+    for (const [car, torque] of [[a, torqueA / depthSum], [b, torqueB / depthSum]]) {
+      const dpsi = Math.max(-CONTACT_KICK_CAP, Math.min(CONTACT_KICK_CAP,
+        CONTACT_KICK * punch * torque));
+      car.heading += dpsi;
+      car.slip = Math.max(-SLIP_MAX, Math.min(SLIP_MAX, car.slip + dpsi));
+      car.speed *= 1 - Math.min(0.35, punch * CONTACT_SCRUB);
+    }
+  }
+  // gentle rubbing friction while touching (door-to-door leaning)
   a.speed *= 1 - 0.3 * dt;
   b.speed *= 1 - 0.3 * dt;
+  return isHit ? impact : 0; // rubs report 0 — contact sound is hits only
 }

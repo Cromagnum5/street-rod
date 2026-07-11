@@ -490,6 +490,7 @@ function buildRaceScene(opp) {
   race.accelSm = 0;
   race.camSpeed = 0;
   race.camY = 0;
+  race.lastClunk = -9;
   race.aiRev = 0;
   race.aiRevT = 0.3 + Math.random() * 0.6; // first blip lands shortly after staging
 
@@ -542,7 +543,12 @@ function raceTick(t, dt) {
     const ctrl = race.driver.drive(dt, race.time - race.goTime, p.trackDist);
     ai.step(dt, ctrl.throttle, ctrl.brake, ctrl.steer);
     race.aiSteer = ctrl.steer;
-    resolveContact(p, ai, dt);
+    const impact = resolveContact(p, ai, dt);
+    // audible contact: real hits clunk (rate-limited), rubbing stays silent
+    if (impact > 2 && race.time - race.lastClunk > 0.25) {
+      sfx.clunk(Math.min(1, impact / 12));
+      race.lastClunk = race.time;
+    }
 
     if (ai.finished && race.aiFinishedAt === null) race.aiFinishedAt = race.time;
     if (p.finished) finishRace(race.aiFinishedAt === null, null);
