@@ -93,6 +93,11 @@ export class CarSim {
     this.grade = s.grade ?? 0; // road slope (dy per metre along the road)
     this.groundPitch = 0;    // rad, ground attitude for the mesh root (+ = nose-down)
 
+    // contact after-effects (resolveContact writes, step plays them out)
+    this.impulseDrag = 0;  // 1/s extra drag from a hit, decays in ~0.3 s
+    this.kickPending = 0;  // rad of contact knock still to rotate in
+    this.contactLoss = 0;  // m/s shed to contact this frame (camera reads it)
+
     this.gear = 1;
     this.rpm = IDLE_RPM;
     this.shiftTimer = 0;
@@ -119,6 +124,27 @@ export class CarSim {
   // throttle 0..1, brake 0..1, steer -1..1 (left is negative)
   step(dt, throttle, brake, steer) {
     const st = this.stats;
+    this.contactLoss = 0;
+
+    // ----- contact after-effects -----
+    // hits land as pending state and play out over a few frames — the speed
+    // loss bleeds over ~0.3 s, the knock rotates in over ~0.15 s. Applying
+    // them in one frame made the camera FOV kick pulse and the mesh snap
+    // (~10°/frame), which read as stutter while rubbing.
+    if (this.impulseDrag > 0) {
+      const shed = this.speed * Math.min(0.5, this.impulseDrag * dt);
+      this.speed -= shed;
+      this.contactLoss += shed;
+      this.impulseDrag *= Math.max(0, 1 - dt * 6);
+      if (this.impulseDrag < 0.01) this.impulseDrag = 0;
+    }
+    if (this.kickPending !== 0) {
+      const d = this.kickPending * Math.min(1, dt * 12);
+      this.heading += d;
+      this.slip = Math.max(-SLIP_MAX, Math.min(SLIP_MAX, this.slip + d));
+      this.kickPending -= d;
+      if (Math.abs(this.kickPending) < 1e-4) this.kickPending = 0;
+    }
 
     // ----- gearbox -----
     if (this.shiftTimer > 0) {
@@ -343,15 +369,20 @@ export function resolveContact(a, b, dt) {
     a._hitCool = 0.5;
     const punch = impact - CONTACT_TAP; // only the speed beyond "touch" hits
     for (const [car, torque] of [[a, torqueA / depthSum], [b, torqueB / depthSum]]) {
-      const dpsi = Math.max(-CONTACT_KICK_CAP, Math.min(CONTACT_KICK_CAP,
+      // queued, not applied: CarSim.step plays these out over a few frames
+      car.kickPending += Math.max(-CONTACT_KICK_CAP, Math.min(CONTACT_KICK_CAP,
         CONTACT_KICK * punch * torque));
-      car.heading += dpsi;
-      car.slip = Math.max(-SLIP_MAX, Math.min(SLIP_MAX, car.slip + dpsi));
-      car.speed *= 1 - Math.min(0.35, punch * CONTACT_SCRUB);
+      // ×6 with a 6/s decay integrates to the same total loss as the old
+      // instant cut, just spread over ~0.3 s
+      car.impulseDrag += Math.min(0.35, punch * CONTACT_SCRUB) * 6;
     }
   }
-  // gentle rubbing friction while touching (door-to-door leaning)
-  a.speed *= 1 - 0.3 * dt;
-  b.speed *= 1 - 0.3 * dt;
+  // gentle rubbing friction while touching (door-to-door leaning) — counted
+  // as contactLoss so the camera's FOV-kick accel signal ignores it too
+  for (const car of [a, b]) {
+    const rub = car.speed * 0.3 * dt;
+    car.speed -= rub;
+    car.contactLoss += rub;
+  }
   return isHit ? impact : 0; // rubs report 0 — contact sound is hits only
 }

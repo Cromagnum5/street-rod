@@ -181,15 +181,21 @@ sound is synthesized live with the Web Audio API.
   and clunks (`sfx.clunk`, rate-limited in raceTick). Kicks are
   depth-weighted torque across all touching circle pairs so door-to-door
   torques cancel — side pressure shoves, only a lone corner clip yaws.
-  Three stutter bugs were fixed in one session (deepest-pair flip-flop,
-  per-frame micro-kicks, slam-threshold feedback loop pinning impact at
-  exactly 5.00) — measure with the rub harness (4 s steer-into-contact,
-  count lateral sign flips + hit events) before touching this code.
-  KNOWN ISSUE (Jason, 2026-07-11): occasional stutter while rubbing
-  remains. Prime suspect: the instant per-hit speed cut (`punch *
-  CONTACT_SCRUB`, up to ~25% in one frame) — the camera's accel-driven FOV
-  kick reacts to that speed step, which may read as a hitch even though
-  positions are smooth. Untested hypothesis. `_contact`/`_hitCool` are
+  Hits land as pending state, never instant steps (Jason confirmed smooth
+  2026-07-11): `kickPending` rotates the knock in over ~0.15 s and
+  `impulseDrag` bleeds the speed loss over ~0.3 s (same integrated total as
+  an instant cut). Every contact speed loss (incl. rub friction) is
+  reported via `contactLoss`, which raceTick adds back into the FOV-kick
+  accel signal so contact never pulses the camera — instant versions of
+  any of these read as stutter (FOV sawtooth + ~10°/frame mesh snap).
+  Five stutter causes were fixed in one session; before touching this
+  code, measure with the rub harness (4 s steer-into-contact: lateral
+  sign flips, hit-event log, and a replica of the raceTick FOV pipeline
+  counting FOV direction reversals — 5 reversals/4 s was the bad state,
+  0 is correct). Earlier fixed causes, for pattern-matching: deepest-pair
+  flip-flop jerking the push normal, per-frame micro-kicks, and the slam
+  threshold acting as a feedback setpoint (impact pinned at exactly 5.00
+  every frame — cooldown must gate slams too). `_contact`/`_hitCool` are
   pair state on the first car — fine for 2 cars, needs a pair key for 3+.
 - Gearboxes are all automatics — the sim auto-shifts, so part names must
   not say "Manual" (Jason's call, 2026-07-10). Gear count is
@@ -208,7 +214,11 @@ with args `--use-gl=swiftshader --enable-unsafe-swiftshader`. Serve the repo,
 send key events, assert on HUD/menu DOM, screenshot and read the PNGs to
 check visuals. `page.on("pageerror")` must stay empty. `window.__race` is a
 live debug handle on the race state (`__race.player.speed/slip/screech`…);
-menu path is Enter (title) → Space (garage) → Enter (opponent card). Quick syntax check:
+menu path is Enter (title) → Space (garage) → Enter (opponent card). For a
+maxed test car, seed the save before reload:
+`localStorage.setItem("streetrod86-save-v1", JSON.stringify({money:99999,
+carTier:6,parts:{engine:3,induction:3,exhaust:3,tires:3,suspension:3,
+gearbox:3},bossesBeaten:5}))` (Jason knows this trick too). Quick syntax check:
 `npx esbuild --bundle src/main.js --outfile=/dev/null --format=esm
 --alias:three=./lib/three.module.js`.
 

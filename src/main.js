@@ -595,7 +595,9 @@ function raceTick(t, dt) {
   camera.lookAt(p.x + fx * 7, race.camY + 1.1, p.z + fz * 7);
   // gentle widening with speed; the drama comes from a small acceleration kick
   // (zoom-out surge on launch/passing, slight tighten under braking)
-  const accel = (p.speed - race.prevSpeed) / Math.max(dt, 1e-4);
+  // contactLoss is added back so bumping the other car doesn't fire the
+  // FOV kick — those speed steps read as camera stutter, not drama
+  const accel = (p.speed + p.contactLoss - race.prevSpeed) / Math.max(dt, 1e-4);
   race.prevSpeed = p.speed;
   race.accelSm += (accel - race.accelSm) * Math.min(1, dt * 4);
   const kick = race.over ? 0
