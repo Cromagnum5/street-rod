@@ -442,17 +442,39 @@ sound is synthesized live with the Web Audio API.
   `CONTACT_TAP` closing speed, or `CONTACT_SLAM` mid-contact, both gated by
   a 0.5 s per-pair cooldown — kicks heading+slip together (travel direction
   unchanged; `SLIP_RECOVER` plays the recovery like a drift exit, so a
-  rear-quarter tap fishtails catchably), sheds speed by `CONTACT_SCRUB`,
-  and clunks (`sfx.clunk`, rate-limited in raceTick). Kicks are
+  rear-quarter tap fishtails catchably) and clunks (`sfx.clunk`,
+  rate-limited in raceTick). Kicks are
   depth-weighted torque across all touching circle pairs so door-to-door
   torques cancel — side pressure shoves, only a lone corner clip yaws.
   Hits land as pending state, never instant steps (Jason confirmed smooth
-  2026-07-11): `kickPending` rotates the knock in over ~0.15 s and
-  `impulseDrag` bleeds the speed loss over ~0.3 s (same integrated total as
-  an instant cut). Every contact speed loss (incl. rub friction) is
-  reported via `contactLoss`, which raceTick adds back into the FOV-kick
-  accel signal so contact never pulses the camera — instant versions of
-  any of these read as stutter (FOV sawtooth + ~10°/frame mesh snap).
+  2026-07-11): `kickPending` rotates the knock in over ~0.15 s. Every
+  contact speed change is reported via `contactLoss` (negative when contact
+  *gave* speed), which raceTick adds back into the FOV-kick accel signal so
+  contact never pulses the camera — instant versions of any of these read
+  as stutter (FOV sawtooth + ~10°/frame mesh snap).
+- **Rubbing is racing: contact trades speed, it never destroys it** (Jason's
+  call, 2026-07-12 — "the cars slow way down when they touch, can this be
+  removed?"). Two symmetric speed taxes used to bill both cars for any touch:
+  a flat 0.3/s rub drag on *both* (≈12 m/s² at speed — a hidden brake for the
+  crime of being alongside someone) and `CONTACT_SCRUB`, which slowed the
+  hitter *and* the hit. Both are gone. In their place `resolveContact` does one
+  equal-mass momentum trade along the deepest contact pair, rate-limited so it
+  converges over ~0.2 s instead of stepping (that easing is what keeps the
+  camera and mesh smooth — don't make it instant):
+  along the **normal** it's the shunt (`CONTACT_PUSH`) — rear-end a slower car
+  and he's fired forward by exactly what you lose; along the **contact face**
+  it's rub friction (`CONTACT_RUB`, deliberately gentle) — so door-to-door at
+  the same speed costs *nothing*, and only a speed *difference* scrubs, the
+  faster car dragging the slower one along with it. Arcade guardrails:
+  `CONTACT_REL_CAP` (12 m/s) caps the relative speed the trade will bill for,
+  and `CONTACT_BOOST_ACC` (15 m/s²) caps the push a car can *receive* so a
+  shunt is a shove, not a launch. Only the component along a car's travel
+  direction can move a scalar speed (`applyContactImpulse`); the sideways part
+  of a hit is what the heading kick is for. Measured (stock Model A, 8 m/s
+  closing rear-end): hitter 40 → 35.1, hit car 32 → 35.5, and they then run
+  locked together — a push, like it should be. Side-by-side rubbing at equal
+  speed is now bit-identical to not touching at all (same speeds, same FOV
+  trace), which is the check to re-run if this is ever retuned.
   Five stutter causes were fixed in one session; before touching this
   code, measure with the rub harness (4 s steer-into-contact: lateral
   sign flips, hit-event log, and a replica of the raceTick FOV pipeline

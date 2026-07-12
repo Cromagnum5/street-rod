@@ -104,9 +104,9 @@ export class CarSim {
     this.groundPitch = 0;    // rad, ground attitude for the mesh root (+ = nose-down)
 
     // contact after-effects (resolveContact writes, step plays them out)
-    this.impulseDrag = 0;  // 1/s extra drag from a hit, decays in ~0.3 s
     this.kickPending = 0;  // rad of contact knock still to rotate in
-    this.contactLoss = 0;  // m/s shed to contact this frame (camera reads it)
+    this.contactLoss = 0;  // m/s shed to contact this frame (camera reads it;
+                           // negative when contact *gave* the car speed)
 
     this.gear = 1;
     this.rpm = IDLE_RPM;
@@ -137,17 +137,11 @@ export class CarSim {
     this.contactLoss = 0;
 
     // ----- contact after-effects -----
-    // hits land as pending state and play out over a few frames — the speed
-    // loss bleeds over ~0.3 s, the knock rotates in over ~0.15 s. Applying
-    // them in one frame made the camera FOV kick pulse and the mesh snap
-    // (~10°/frame), which read as stutter while rubbing.
-    if (this.impulseDrag > 0) {
-      const shed = this.speed * Math.min(0.5, this.impulseDrag * dt);
-      this.speed -= shed;
-      this.contactLoss += shed;
-      this.impulseDrag *= Math.max(0, 1 - dt * 6);
-      if (this.impulseDrag < 0.01) this.impulseDrag = 0;
-    }
+    // a hit lands as pending state and plays out over a few frames — the knock
+    // rotates in over ~0.15 s. Applying it in one frame made the camera FOV
+    // kick pulse and the mesh snap (~10°/frame), which read as stutter while
+    // rubbing. (The speed side of a contact is a rate-limited trade made in
+    // resolveContact itself, so it's already spread over time.)
     if (this.kickPending !== 0) {
       const d = this.kickPending * Math.min(1, dt * 12);
       this.heading += d;
@@ -304,14 +298,37 @@ export class CarSim {
 // clipping a quarter panel knocks the nose/tail around and the slip model
 // plays the recovery — a shove, never a wreck (kick capped, slip capped,
 // self-recovering). Returns the closing speed (m/s) for impact effects.
+//
+// Contact does not *destroy* speed, it *trades* it (rubbing is racing):
+// equal masses, so whatever the pusher loses the pushed car gains. Along the
+// contact normal that's the shunt — rear-end a slower car and you give him
+// your closing speed and pay for it yourself. Along the contact face it's rub
+// friction — door-to-door at the same speed costs nothing at all, and only the
+// *difference* in speed scrubs (the faster car drags the slower one along).
 const CONTACT_END = 1.3;    // circle centers sit this far fore/aft of car center
 const CONTACT_R = 1.15;     // circle radius; pair sum 2.3 ≈ car width
 const CONTACT_KICK = 0.03;  // rad of nose/tail kick per m/s of closing speed
 const CONTACT_KICK_CAP = 0.25;
-const CONTACT_SCRUB = 0.04; // speed fraction shed per m/s of closing speed
 const CONTACT_TAP = 1.2;    // m/s closing speed below which it's a rub, not a hit
 const CONTACT_SLAM = 5;     // m/s that counts as a fresh hit even mid-contact
 const CONTACT_RELAX = 10;   // 1/s — separation eases out instead of snapping
+const CONTACT_PUSH = 9;     // 1/s — rate the shunt trades speed along the normal
+const CONTACT_RUB = 1.2;    // 1/s — rate rubbing bleeds a speed difference
+const CONTACT_REL_CAP = 12; // m/s of relative speed the trade will bill for
+const CONTACT_BOOST_ACC = 15; // m/s² ceiling on the push a car can *receive*
+
+// Move a car's scalar speed by an impulse (jx, jz) in world space, billing the
+// change to contactLoss so the camera's accel signal ignores it. Only the
+// component along the car's travel direction can change a scalar speed; the
+// rest is what the heading kick is for.
+function applyContactImpulse(car, jx, jz, dt) {
+  const dir = car.heading - car.slip;
+  let dv = jx * Math.sin(dir) + jz * Math.cos(dir);
+  if (dv > 0) dv = Math.min(dv, CONTACT_BOOST_ACC * dt); // a shove, not a launch
+  const next = Math.max(0, car.speed + dv);
+  car.contactLoss += car.speed - next;
+  car.speed = next;
+}
 
 export function resolveContact(a, b, dt) {
   const cdx = a.x - b.x, cdz = a.z - b.z;
@@ -384,17 +401,28 @@ export function resolveContact(a, b, dt) {
       // queued, not applied: CarSim.step plays these out over a few frames
       car.kickPending += Math.max(-CONTACT_KICK_CAP, Math.min(CONTACT_KICK_CAP,
         CONTACT_KICK * punch * torque));
-      // ×6 with a 6/s decay integrates to the same total loss as the old
-      // instant cut, just spread over ~0.3 s
-      car.impulseDrag += Math.min(0.35, punch * CONTACT_SCRUB) * 6;
     }
   }
-  // gentle rubbing friction while touching (door-to-door leaning) — counted
-  // as contactLoss so the camera's FOV-kick accel signal ignores it too
-  for (const car of [a, b]) {
-    const rub = car.speed * 0.3 * dt;
-    car.speed -= rub;
-    car.contactLoss += rub;
-  }
+
+  // ----- the trade -----
+  // Speed changes hands here instead of evaporating, so a shunt is a racing
+  // move: run into the back of a slower car and he gets fired forward by what
+  // you lose. Equal masses, so the impulse on a is the mirror of the one on b,
+  // and it's rate-limited (not instant), which is what keeps it smooth — the
+  // trade converges the two cars' contact-normal velocities over ~0.2 s rather
+  // than stepping them, so no FOV pulse and no mesh snap.
+  const tx = -hit.nz, tz = hit.nx;              // along the contact face
+  const rvx = vax - vbx, rvz = vaz - vbz;       // a's velocity relative to b
+  const clamp = (v) => Math.max(-CONTACT_REL_CAP, Math.min(CONTACT_REL_CAP, v));
+  const relN = clamp(rvx * hit.nx + rvz * hit.nz); // < 0 while closing in
+  const relT = clamp(rvx * tx + rvz * tz);         // sliding along the other car
+  const kN = Math.min(1, dt * CONTACT_PUSH);    // normal: cars can't interpenetrate
+  const kT = Math.min(1, dt * CONTACT_RUB);     // face: only friction, so gentler
+  // half each: a gives up exactly what b receives
+  const jx = -0.5 * (relN * kN * hit.nx + relT * kT * tx);
+  const jz = -0.5 * (relN * kN * hit.nz + relT * kT * tz);
+  applyContactImpulse(a, jx, jz, dt);
+  applyContactImpulse(b, -jx, -jz, dt);
+
   return isHit ? impact : 0; // rubs report 0 — contact sound is hits only
 }
