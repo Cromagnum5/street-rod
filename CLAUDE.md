@@ -39,6 +39,11 @@ sound is synthesized live with the Web Audio API.
   bosses stay pink, so no pinks in the list), `BOSSES` ladder.
 - `src/carmesh.js` — procedural car builder; three era styles (`prewar`,
   `fifties`, `muscle`) from boxes/cylinders + a `wedge()` prism helper.
+  `buildCar(tier, { color, parts })` — `parts` are the owner's part levels, and
+  three of them are *visible* (see the visual-upgrade entry in Design intent):
+  `addInduction` bolts hardware through the hood, `addExhaust` grows the pipes,
+  `TIRE_VIZ` widens the tires. Every caller (garage, race, portraits) passes the
+  real build, so the AI's car wears its own upgrades.
   Returns a Group facing +Z with `userData.wheels` for spin/steer and
   `userData.body`, the sprung-body sub-group that suspension roll/pitch
   rotates while the wheels stay planted on the road. Prewar cars (Model A
@@ -170,6 +175,28 @@ sound is synthesized live with the Web Audio API.
   gave (1★ stock 'Cuda was 82.5 s). A player who *stops* upgrading (level-2
   parts, 66.8 s) now loses to the 4–5★ challengers — the crown's money sink
   is the point. The mercy freebie is exempt (no `crown` flag on Freddy).
+- Upgrades you can **see** (Jason's call, 2026-07-12: "reward the player for
+  upgrading parts on each model"). Three of the six parts hang outside the body,
+  so those three change the mesh and the other three honestly don't:
+  **induction** — stock is a flat hood (this *took away* the muscle cars' free
+  hood scoop; you earn it now), then a cut with velocity stacks, then a
+  body-colored half-round turbo bulge sunk to its axle in the hood, then the
+  blower: case through the hood, butterfly scoop overhanging the drive pulley.
+  **exhaust** — a tucked stub you can barely see, then one pipe, then duals,
+  then open headers with zoomie stubs; hot rods run theirs down the flank at
+  every level, the later eras exit under the rear valance until open headers
+  move them to the rockers. **tires** — skinny whitewall pizza cutters to fat
+  blackwall slicks with a big mag face, rears growing faster than fronts for
+  drag stagger (width only; radius is what the body sits on and what
+  `userData.wheelR` spins). **engine/gearbox/suspension change nothing** —
+  a motor under a hood and a box inside the car have nowhere to show, and
+  faking it would be noise. Keep that honesty; the audio already carries engine.
+  Load-bearing consequences: buying a part rebuilds the garage turntable car
+  (`refreshGarageCar` in main.js) — seeing it appear the moment you pay *is* the
+  feature. Opponent card portraits render the AI's real `aiParts()` build, so a
+  blown 4★ shows up on his card with a blower and the pips match the photo (the
+  portrait cache key had to grow from tier+color to tier+color+build). Same
+  spirit as "upgraded opponents sound built": now they look it.
 - Camera drama comes from **acceleration, not speed**: framing follows the
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big
@@ -404,8 +431,17 @@ that class objectively and in seconds; run both before trusting a car render:
    right-hand one masked because it grazed the (also floating) exhaust pipe.
 2. **Wedge winding** — the prisms are convex, so a triangle is correctly
    wound iff its normal points away from the centroid. See the winding gotcha.
-Both want to be re-run after *any* mesh edit: moving one box out from under
-another is exactly how these bugs get introduced.
+3. **Pipe/tire clearance** — the inverse bug: a part quietly *intersecting* its
+   neighbour, which check 1 can never flag (it only hunts parts touching
+   nothing). Box3 every long chrome cylinder against every wheel and demand a
+   real gap. Added 2026-07-12 after the side pipes speared the wheels on every
+   fifties and muscle car — see the tire-diameter gotcha for why the hand
+   arithmetic said they cleared.
+All three now **sweep part levels**, not just the 7 tiers: every visible part is
+a fresh chance to bolt a box to nothing or bury it in its neighbour. 168 builds
+(7 cars × 3 visible categories × 4 levels, off both a stock and a maxed base)
+still runs in seconds. Re-run all three after *any* mesh edit: moving one box
+out from under another is exactly how these bugs get introduced.
 
 For physics/balance questions, skip the browser: bundle a Node script that
 imports `physics.js` (and `Track` if needed) with the same esbuild
@@ -460,6 +496,16 @@ cornering-scrub and finish-teleport numbers precisely.
   (Deuce stock), 3.43→4.61 ('Cuda built); ordering intact, nothing inverted,
   but **the boss is now slightly easier**. First knob if it's a walkover is
   the planning grip in `ai.js` (`0.90 + 0.08 * skill`).
+- **A wheel's extent along the car is its DIAMETER, not its width** — obvious
+  written down, and I still got it backwards (2026-07-12). Sizing the open-header
+  side pipes, I checked them against the tires' *width* and computed 60 mm of
+  clearance; the real number was −80 mm, and the pipes speared all four wheels on
+  every fifties and muscle car at every tire level. Jason saw it on the Merc.
+  The clear span between the tires is `wheelBase/2 − wheelR` at each end, and on
+  muscle cars it's **asymmetric** (fat rears, r=0.42, crowd harder than the
+  fronts, r=0.37), so their pipe is nudged forward to sit in the middle of it.
+  This is why mesh check 3 exists: the floating-part check hunts parts touching
+  *nothing* and is structurally blind to a part jammed *through* something.
 - Wheel groups get both accumulated spin (`rotation.x += …`) and steer yaw
   (`rotation.y =`) on the same Euler, so `addWheels()` sets
   `rotation.order = "YXZ"` (yaw wraps spin). Don't remove it — the default

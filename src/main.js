@@ -118,7 +118,8 @@ function buildTitleScene() {
     new THREE.MeshLambertMaterial({ color: 0x1a1226 }));
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
-  const car = buildCar(CAR_TIERS[6]);
+  // attract screen shows the crown car fully built — blower, side pipes, slicks
+  const car = buildCar(CAR_TIERS[6], { parts: { induction: 3, exhaust: 3, tires: 3 } });
   scene.add(car);
   camera.fov = 55; camera.updateProjectionMatrix();
   sceneTick = (t) => {
@@ -168,7 +169,24 @@ function buyPart(key) {
   sfx.cashSound();
   garageVoice?.setSpec(soundSpec(playerTier(), player.parts));
   garageRev = 1; // hear the difference
+  refreshGarageCar(); // ...and see it, if the part is one you can see
   renderGaragePanel();
+}
+
+// Swap the turntable car for one wearing the new hardware. Rebuilding the whole
+// garage scene would work too, but this keeps the turntable phase (rotation.y is
+// driven off the clock) and the lights alone.
+function refreshGarageCar() {
+  if (!garageCarMesh || !scene) return;
+  const spin = garageCarMesh.rotation.y;
+  scene.remove(garageCarMesh);
+  garageCarMesh.traverse((o) => {
+    if (o.isMesh) o.geometry.dispose();
+  });
+  garageCarMesh = buildCar(playerTier(), { parts: player.parts });
+  garageCarMesh.position.y = 0.2;
+  garageCarMesh.rotation.y = spin;
+  scene.add(garageCarMesh);
 }
 
 function buildGarageScene() {
@@ -196,7 +214,7 @@ function buildGarageScene() {
   plat.position.y = 0.1;
   scene.add(plat);
 
-  garageCarMesh = buildCar(playerTier());
+  garageCarMesh = buildCar(playerTier(), { parts: player.parts });
   garageCarMesh.position.y = 0.2;
   scene.add(garageCarMesh);
 
@@ -335,11 +353,12 @@ states.OPPONENTS = {
 };
 
 // Opponent car portraits: one small offscreen renderer shared by every card,
-// results cached per tier+color (the roster reshuffles colors each visit).
+// results cached per tier+color+build (the roster reshuffles colors each visit,
+// and the bolt-on parts are visible — a blown 4-star has to look like one).
 let portraitGL = null;
 const portraitCache = new Map();
-function carPortrait(tierIdx, color) {
-  const cacheKey = `${tierIdx}:${color}`;
+function carPortrait(tierIdx, color, parts) {
+  const cacheKey = `${tierIdx}:${color}:${PART_KEYS.map((k) => parts?.[k] ?? 0).join("")}`;
   const hit = portraitCache.get(cacheKey);
   if (hit) return hit;
   if (!portraitGL) {
@@ -355,7 +374,7 @@ function carPortrait(tierIdx, color) {
   const fill = new THREE.DirectionalLight(0xbcd0ff, 0.5);
   fill.position.set(-4, 2, -2);
   s.add(fill);
-  const car = buildCar(CAR_TIERS[tierIdx], { color });
+  const car = buildCar(CAR_TIERS[tierIdx], { color, parts });
   car.rotation.y = 0.62; // front three-quarter, like a catalog photo
   s.add(car);
   const L = car.userData.length;
@@ -382,7 +401,7 @@ function cardHTML(opp) {
   return `
     <div class="oppName">${opp.name}</div>
     <div class="oppCar">${carName}</div>
-    <div class="oppPhoto"><img src="${carPortrait(opp.carTier, opp.carColor)}" alt="${carName}"></div>
+    <div class="oppPhoto"><img src="${carPortrait(opp.carTier, opp.carColor, build)}" alt="${carName}"></div>
     <div class="oppFlavor">&ldquo;${opp.flavor}&rdquo;</div>
     <div class="oppBuild">${buildRows}</div>
     <div class="oppStats">
@@ -513,8 +532,9 @@ function buildRaceScene(opp) {
   race.player = new CarSim(pStats, track, -3);
   race.ai = new CarSim(aStats, track, 3);
   race.driver = new AIDriver(race.ai, track, opp.skill, 3);
-  race.playerMesh = buildCar(playerTier());
-  race.aiMesh = buildCar(aiTierData, { color: opp.carColor }); // same paint as the card
+  race.playerMesh = buildCar(playerTier(), { parts: player.parts });
+  // same paint AND same build as the card: if he showed up with a blower, it's there
+  race.aiMesh = buildCar(aiTierData, { color: opp.carColor, parts: oppParts });
   // root carries heading (Y) then ground pitch (X) once hills exist; the
   // default XYZ order would pitch about the world axis instead of the car's
   race.playerMesh.rotation.order = "YXZ";

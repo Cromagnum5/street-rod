@@ -53,7 +53,7 @@ function wedge(w, h, d, mat, flip = false) {
   return m;
 }
 
-function wheel(radius, width, whitewall) {
+function wheel(radius, width, whitewall, hubF) {
   const g = new THREE.Group();
   const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 14), TIRE);
   tire.rotation.z = Math.PI / 2;
@@ -64,33 +64,150 @@ function wheel(radius, width, whitewall) {
     wall.rotation.z = Math.PI / 2;
     g.add(wall);
   }
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.34, radius * 0.34, width + 0.03, 10), HUB);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * hubF, radius * hubF, width + 0.03, 10), HUB);
   hub.rotation.z = Math.PI / 2;
   g.add(hub);
   return g;
 }
 
-function addWheels(group, spec) {
+// Tire upgrades, in width: skinny bias-ply pizza cutters at stock, fat blackwall
+// slicks (with a big polished mag face) when maxed, rears growing faster than
+// fronts for drag stagger. Radius stays put — the wheels are what the body sits
+// on, and userData.wheelR drives the visual spin rate.
+const TIRE_VIZ = [
+  { front: 0.72, rear: 0.82, wall: true,  hub: 0.34 },
+  { front: 1.00, rear: 1.08, wall: true,  hub: 0.36 },
+  { front: 1.26, rear: 1.42, wall: false, hub: 0.44 },
+  { front: 1.42, rear: 1.60, wall: false, hub: 0.52 },
+];
+
+function addWheels(group, spec, tireLvl) {
   const wheels = [];
   const { wheelR, wheelW, trackW, wheelBase, whitewall } = spec;
-  for (const [x, z] of [
-    [-trackW / 2, wheelBase / 2], [trackW / 2, wheelBase / 2],
-    [-trackW / 2, -wheelBase / 2], [trackW / 2, -wheelBase / 2],
+  const v = TIRE_VIZ[tireLvl];
+  for (const [x, z, isRear] of [
+    [-trackW / 2, wheelBase / 2, false], [trackW / 2, wheelBase / 2, false],
+    [-trackW / 2, -wheelBase / 2, true], [trackW / 2, -wheelBase / 2, true],
   ]) {
-    const w = wheel(wheelR, wheelW, whitewall);
+    // muscle cars carry a bigger rear tire on top of whatever the parts add
+    const r = isRear && spec.rearWheelR ? spec.rearWheelR : wheelR;
+    const w = wheel(r, wheelW * (isRear ? v.rear : v.front), whitewall && v.wall, v.hub);
     // steer yaw (y) must wrap the accumulated spin (x), or the spin angle
     // tumbles the yawed wheel and the fronts wobble once per revolution
     w.rotation.order = "YXZ";
-    w.position.set(x, wheelR, z);
+    w.position.set(x, r, z);
     group.add(w);
     wheels.push(w);
   }
   return wheels;
 }
 
+// ------- bolt-on upgrade hardware -------
+// The visible reward for spending money. Same two rules as the rest of the mesh:
+// a piece must OVERLAP whatever it bolts to (or it's floating) and STAND PROUD
+// of it (or that surface eats it). Both are covered by the part-level sweep in
+// the mesh checks — re-run them after touching anything here.
+
+// Induction comes up through the hood. `m` is the hood mounting surface:
+// { y: top face, z: center of the usable hood span }.
+function addInduction(g, level, m, paint, accent) {
+  if (level === 1) {
+    // twin carbs: a cut in the hood with velocity stacks poking out of it
+    const cut = box(0.34, 0.06, 0.52, accent);
+    cut.position.set(0, m.y + 0.01, m.z); g.add(cut);
+    for (const sz of [-1, 1]) {
+      const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.16, 10), CHROME);
+      stack.castShadow = true;
+      stack.position.set(0, m.y + 0.1, m.z + sz * 0.14); g.add(stack);
+    }
+  } else if (level === 2) {
+    // turbo: a blister raised over the plumbing, dark inlet slot in its nose,
+    // and the snail itself sitting on the hood beside it
+    const blister = box(0.52, 0.14, 0.95, paint);
+    blister.position.set(0, m.y + 0.04, m.z); g.add(blister);
+    const slot = box(0.36, 0.08, 0.05, accent);
+    slot.position.set(0, m.y + 0.05, m.z + 0.49); g.add(slot);
+    // the snail is body-colored and buried to its axle — centering it ON the hood
+    // face (m.y) leaves a half-round bulge, which reads as a swelling in the
+    // sheetmetal rather than a drum sitting on top of it
+    const snail = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.13, 12), paint);
+    snail.castShadow = true;
+    snail.rotation.z = Math.PI / 2;
+    snail.position.set(0.3, m.y, m.z - 0.32); g.add(snail);
+  } else if (level === 3) {
+    // blower: case standing out of a hole in the hood, butterfly scoop on top,
+    // drive pulley off the front. The one part everybody buys twice.
+    const cut = box(0.5, 0.06, 0.68, accent);
+    cut.position.set(0, m.y + 0.01, m.z); g.add(cut);
+    // everything above the hood is scaled 0.8 in Y off a full-height blower —
+    // heights AND offsets, so the stack still lands on the hood and the pulley
+    // stays centered on the casing. Total rise is 0.308 above the hood face.
+    const casing = box(0.46, 0.208, 0.6, accent);
+    casing.position.set(0, m.y + 0.128, m.z); g.add(casing);
+    // the scoop's nose runs out to the pulley's mid-plane (m.z+0.33), so it
+    // overhangs the front half of the pulley — clear of it in Y, so it shades
+    // the pulley rather than swallowing it
+    const scoop = box(0.56, 0.088, 0.58, CHROME);
+    scoop.position.set(0, m.y + 0.264, m.z + 0.04); g.add(scoop);
+    // the drive pulley turns on the crank axis, so the disc faces FORWARD (+Z).
+    // Spun about x it lies broadside and reads as a jug strapped to the blower.
+    const pulley = new THREE.Mesh(new THREE.CylinderGeometry(0.071, 0.071, 0.07, 12), CHROME);
+    pulley.castShadow = true;
+    pulley.rotation.x = Math.PI / 2;
+    pulley.position.set(0, m.y + 0.128, m.z + 0.33); g.add(pulley);
+  }
+}
+
+function pipe(radius, len, mat) {
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 8), mat);
+  p.castShadow = true;
+  p.rotation.x = Math.PI / 2;
+  return p;
+}
+
+// Exhaust grows: a tucked stub you can barely see -> one pipe -> duals -> open
+// side pipes with header stubs. `e` carries the era's mounting geometry:
+//   sideOnly  hot rods run pipes down the flank at every level (no rear exit)
+//   tail      { x, y, z, len, r } the under-tail pipe
+//   rocker    { x, y, z, len, r } the side pipe, hung off the flank
+//   flankX    the body's side face, so header stubs reach back into it
+function addExhaust(g, level, e) {
+  const rear = (x, r, len) => {
+    const p = pipe(r, len, CHROME);
+    p.position.set(x, e.tail.y, e.tail.z);
+    g.add(p);
+  };
+  const side = (sx, r, headers) => {
+    const p = pipe(r, e.rocker.len, CHROME);
+    p.position.set(sx * e.rocker.x, e.rocker.y, e.rocker.z);
+    g.add(p);
+    if (!headers) return;
+    // zoomie stubs bridging body flank to pipe — they must reach into both
+    const midX = (e.flankX + e.rocker.x) / 2;
+    for (let i = 0; i < 4; i++) {
+      const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, (e.rocker.x - e.flankX) + 0.16, 6), CHROME);
+      stub.castShadow = true;
+      stub.rotation.z = Math.PI / 2;
+      stub.position.set(sx * midX, e.rocker.y + r + 0.02, e.rocker.z + (i - 1.5) * 0.22);
+      g.add(stub);
+    }
+  };
+
+  if (level === 0) { rear(e.tail.x, e.tail.r * 0.8, e.tail.len * 0.75); return; }
+  if (e.sideOnly) {
+    if (level === 1) side(1, e.rocker.r, false);
+    else if (level === 2) { side(1, e.rocker.r, false); side(-1, e.rocker.r, false); }
+    else { side(1, e.rocker.r * 1.25, true); side(-1, e.rocker.r * 1.25, true); }
+    return;
+  }
+  if (level === 1) rear(e.tail.x, e.tail.r, e.tail.len);
+  else if (level === 2) { rear(e.dualX, e.tail.r, e.tail.len); rear(-e.dualX, e.tail.r, e.tail.len); }
+  else { side(1, e.rocker.r, true); side(-1, e.rocker.r, true); }
+}
+
 // ------- era builders -------
 
-function buildPrewar(paint, accentMat) {
+function buildPrewar(paint, accentMat, viz) {
   // Tall narrow cabin, long hood, exposed fenders, running boards. Hot-rod stance.
   const g = new THREE.Group();
   const spec = { wheelR: 0.42, wheelW: 0.26, trackW: 1.55, wheelBase: 2.7, whitewall: true };
@@ -136,17 +253,27 @@ function buildPrewar(paint, accentMat) {
     const hl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), HEADLIGHT);
     hl.position.set(sx * 0.55, 0.85, 1.92); g.add(hl);
   }
-  // exhaust pipe out the side (hot rod!) — it must live between the wheels
-  // (z -0.93..0.93) and ride on the running board, or it spears the front tire
-  // and hangs off the car attached to nothing
-  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 8), CHROME);
-  pipe.rotation.x = Math.PI / 2 - 0.1; pipe.position.set(0.68, 0.51, -0.05); g.add(pipe);
+  // hood top is y=1.06; the cut has to clear the cowl (z=1.8) and the windshield
+  addInduction(g, viz.induction, { y: 1.06, z: 1.0 }, paint, accentMat);
+  // hot rods run their pipes down the flank at every level (no rear exit). The
+  // side pipe must live between the wheels (z -0.93..0.93) or it spears the front
+  // tire, and it hangs off the BODY, above the running board — resting it on the
+  // board (its top is y=0.455) stacks the two, and the board's dark outer face
+  // peeking out below the chrome reads as a second exhaust pipe underneath.
+  // Lakes-pipe height (y=0.60) leaves a clean gap and the board is a step again.
+  // The stock stub tucks under the raised trunk instead.
+  addExhaust(g, viz.exhaust, {
+    sideOnly: true,
+    flankX: 0.525, // the hood is the narrowest thing a header stub must reach
+    tail: { x: 0.3, y: 0.55, z: -1.55, len: 0.7, r: 0.055 },
+    rocker: { x: 0.62, y: 0.6, z: -0.05, len: 1.5, r: 0.06 },
+  });
 
   spec.length = 4.0;
   return { g, spec };
 }
 
-function buildFifties(paint, accentMat, fins) {
+function buildFifties(paint, accentMat, fins, viz) {
   // Long, low, bulbous. Chrome everywhere. Optional tailfins + two-tone roof.
   const g = new THREE.Group();
   const spec = { wheelR: 0.38, wheelW: 0.3, trackW: 1.72, wheelBase: 3.0, whitewall: true };
@@ -199,17 +326,33 @@ function buildFifties(paint, accentMat, fins) {
     hl.position.set(sx * 0.68, 0.71, 2.36); g.add(hl);
   }
 
+  // hood surface is the deck's top face (y=1.06), forward of the windshield foot
+  addInduction(g, viz.induction, { y: 1.06, z: 1.65 }, paint, accentMat);
+  // tailpipes exit under the rear bumper (its underside is y=0.33 — a pipe any
+  // higher spears it); open headers dump down the rockers instead. The side pipe
+  // is short enough (±1.2) to stay clear of the widest tires at z ±1.29.
+  addExhaust(g, viz.exhaust, {
+    flankX: 0.925,
+    dualX: 0.62,
+    tail: { x: 0.55, y: 0.27, z: -2.28, len: 0.75, r: 0.055 },
+    // a side pipe is bounded by the TIRES' inner faces (axle -+ wheel RADIUS,
+    // not half its width): +-1.12 here, so 2.1 long leaves 70 mm of daylight
+    rocker: { x: 0.96, y: 0.3, z: 0, len: 2.1, r: 0.065 },
+  });
+
   spec.length = 4.9;
   return { g, spec };
 }
 
-function buildMuscle(paint, accentMat) {
+function buildMuscle(paint, accentMat, viz) {
   // Low, wide, long hood, fastback. Rake stance, fat rear tires.
   const g = new THREE.Group();
   const spec = { wheelR: 0.37, wheelW: 0.34, trackW: 1.78, wheelBase: 2.95, whitewall: false };
 
   const body = box(1.9, 0.5, 4.6, paint); body.position.set(0, 0.62, 0); g.add(body);
-  const hoodScoop = box(0.5, 0.14, 0.8, accentMat); hoodScoop.position.set(0, 0.94, 1.3); g.add(hoodScoop);
+  // the hood scoop is no longer standard equipment — it's what INDUCTION buys.
+  // Hood top face is y=0.87, clear from the belt (z=1.0) to the grille.
+  addInduction(g, viz.induction, { y: 0.87, z: 1.6 }, paint, accentMat);
   // belt slab, cowl (z=1.0) to tail: everything in the greenhouse lands on it —
   // the windshield foot, the fastback and the spoiler legs. Stop it short and
   // those float over the deck with open air underneath.
@@ -254,27 +397,47 @@ function buildMuscle(paint, accentMat) {
     const leg = box(0.1, 0.14, 0.12, accentMat); leg.position.set(sx * 0.6, 1.12, -2.0); g.add(leg);
   }
 
+  // rear exit under the valance until open headers move it to the rockers
+  addExhaust(g, viz.exhaust, {
+    flankX: 0.95,
+    dualX: 0.6,
+    tail: { x: 0.5, y: 0.33, z: -2.25, len: 0.8, r: 0.055 },
+    // fat rears (r=0.42) crowd the pipe harder than the fronts (r=0.37), so the
+    // clear span -1.055..1.105 is off-center — nudge the pipe forward to match
+    rocker: { x: 1.0, y: 0.32, z: 0.02, len: 1.95, r: 0.07 },
+  });
+
   spec.length = 4.8;
   spec.rearWheelR = 0.42; // fat rears
   return { g, spec };
 }
+
+// opts.parts is the player's (or the AI's) part levels — induction, exhaust and
+// tires are the three you can see, so buying them changes the car you look at.
+// Engine and gearbox live inside the body; they stay an audio/stat reward.
+const lvl = (parts, key) => Math.max(0, Math.min(3, parts?.[key] ?? 0));
 
 export function buildCar(tier, opts = {}) {
   const paint = new THREE.MeshPhongMaterial({
     color: opts.color ?? tier.color, shininess: 60, specular: 0x666666,
   });
   const accentMat = new THREE.MeshPhongMaterial({ color: tier.accent, shininess: 40 });
+  const viz = {
+    induction: lvl(opts.parts, "induction"),
+    exhaust: lvl(opts.parts, "exhaust"),
+    tires: lvl(opts.parts, "tires"),
+  };
 
   let built;
-  if (tier.style === "prewar") built = buildPrewar(paint, accentMat);
-  else if (tier.style === "fifties") built = buildFifties(paint, accentMat, tier.fins);
-  else built = buildMuscle(paint, accentMat);
+  if (tier.style === "prewar") built = buildPrewar(paint, accentMat, viz);
+  else if (tier.style === "fifties") built = buildFifties(paint, accentMat, tier.fins, viz);
+  else built = buildMuscle(paint, accentMat, viz);
 
   const { g: body, spec } = built;
   // wheels live on the root so suspension roll/pitch only moves the body
   const root = new THREE.Group();
   root.add(body);
-  const wheels = addWheels(root, spec);
+  const wheels = addWheels(root, spec, viz.tires);
   if (spec.rearAxle) {
     const axle = new THREE.Mesh(
       new THREE.CylinderGeometry(0.07, 0.07, spec.trackW, 8), CHROME);
@@ -295,14 +458,9 @@ export function buildCar(tier, opts = {}) {
     beam.position.set(0, spec.wheelR, spec.wheelBase / 2);
     root.add(beam);
   }
-  // fat rear tires for muscle cars
+  // muscle cars get taller rears (addWheels builds them that way) and a nose-down rake
   let rake = 0;
   if (spec.rearWheelR) {
-    for (const i of [2, 3]) {
-      wheels[i].scale.setScalar(spec.rearWheelR / spec.wheelR);
-      wheels[i].position.y = spec.rearWheelR;
-    }
-    // rake: nose down
     rake = 0.015;
     body.rotation.x = rake;
   }
