@@ -25,6 +25,13 @@ const SLIP_SCRUB = 0.35;    // /s per rad — hanging sideways bleeds speed (roa
 const SLIP_SCRUB_CAP = 0.20; // but never a wall: worst case 20%/s
 const SLIP_SCRUB_FREE = 0.06; // rad of slip that's just cornering, not drifting — costs nothing
 
+// Berm at the outer edge of the run-off (see the soft boundary in step). A
+// glance off it, not a wall: KEEP is restitution (0 = slide along it, 1 = full
+// mirror), SCRUB is how much of the speed you carried *into* it you leave there.
+const BOUNCE_KEEP = 0.55;   // fraction of the outward travel direction handed back
+const BOUNCE_SCRUB = 0.30;  // fraction of the closing speed the berm eats
+const BOUNCE_MIN = 1.0;     // m/s of outward speed below which it's a slide, not a hit
+
 // Plow scrub: asking for more yaw than the tires can bend costs a little speed.
 // Deliberately small — digital keys mean a held steer always over-asks by 3-5x,
 // so this term fires during *ordinary cornering*, not just abuse. It used to run
@@ -107,6 +114,7 @@ export class CarSim {
     this.touching = false; // is another car's panel against mine right now? (AI
                            // racecraft gates on this — see AIDriver.leanBack)
     this.kickPending = 0;  // rad of contact knock still to rotate in
+    this.bouncePending = 0; // rad of berm glance still to rotate in (heading only)
     this.contactLoss = 0;  // m/s shed to contact this frame (camera reads it;
                            // negative when contact *gave* the car speed)
 
@@ -276,19 +284,48 @@ export class CarSim {
     this.grade = surf.grade ?? 0;
     this.groundPitch = -Math.atan(this.grade); // uphill tips the nose up
 
-    // soft boundary: way off the road, ease the car back (relaxing, not punishing)
+    // Soft boundary: a berm at the far edge of the run-off. Run wide into it
+    // and the car glances off back toward the road — it does not stop you, it
+    // does not spin you, it just won't let you leave the world.
     const limit = ROAD_HALF_W + 14;
     if (Math.abs(proj.lateral) > limit) {
       const s = this.track.sample(this.trackDist);
-      const nx = Math.cos(s.heading), nz = -Math.sin(s.heading);
-      const want = Math.sign(proj.lateral) * limit;
-      this.x = s.pos.x + nx * want;
-      this.z = s.pos.z + nz * want;
-      // nudge heading back toward the road
-      let dh = s.heading - this.heading;
-      while (dh > Math.PI) dh -= Math.PI * 2;
-      while (dh < -Math.PI) dh += Math.PI * 2;
-      this.heading += dh * Math.min(1, dt * 2);
+      const nx = Math.cos(s.heading), nz = -Math.sin(s.heading); // left normal
+      const side = Math.sign(proj.lateral);                      // which side we're off
+      // Push back in by the overshoot only — never *rebuild* the position from
+      // sample(): out at 19 m of lever arm, the interpolated normal disagrees
+      // with the polyline projection by ~2 m, and re-placing the car snapped it
+      // that far in one frame. The overshoot is at most a frame of travel.
+      const excess = Math.abs(proj.lateral) - limit;
+      this.x -= nx * side * excess;
+      this.z -= nz * side * excess;
+
+      // Travel direction relative to the road: sin(rel) is its lateral part, so
+      // side*sin(rel) > 0 means still pushing outward. Mirroring rel about 0
+      // reflects the direction across the berm and leaves the along-road part
+      // (cos rel) alone — a glance, not a stop.
+      let rel = this.heading - this.slip - s.heading;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      const outward = side * Math.sin(rel) * this.speed;   // m/s into the berm
+      if (outward > BOUNCE_MIN && this.bouncePending === 0) {
+        this.bouncePending = -rel * (1 + BOUNCE_KEEP);
+        // scuffing the berm costs speed, but it's billed as contact so the
+        // camera's accel signal ignores it (an instant drop reads as an FOV pop)
+        const next = Math.max(0, this.speed - outward * BOUNCE_SCRUB);
+        this.contactLoss += this.speed - next;
+        this.speed = next;
+      }
+    }
+
+    // play the bounce in over ~0.2 s (heading only — the car really does change
+    // direction here, unlike a contact kick, which rotates the nose and leaves
+    // the travel direction to SLIP_RECOVER). Instant would snap the mesh.
+    if (this.bouncePending !== 0) {
+      const d = this.bouncePending * Math.min(1, dt * 8);
+      this.heading += d;
+      this.bouncePending -= d;
+      if (Math.abs(this.bouncePending) < 1e-4) this.bouncePending = 0;
     }
 
     if (this.trackDist >= this.track.length - 6) this.finished = true;

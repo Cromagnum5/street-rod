@@ -247,9 +247,11 @@ export class Track {
       const dx = pos.x - cx, dz = pos.z - cz;
       const d2 = dx * dx + dz * dz;
       if (d2 < best.d2) {
-        // signed lateral: positive = right of centerline
-        const cross = abx * dz - abz * dx;
-        best = { dist: (i + t) * STEP, lateral: Math.sign(cross) * Math.sqrt(d2), d2 };
+        // signed lateral, measured along the same left normal (cos h, -sin h)
+        // every offset in this codebase uses (lane, racingOffset, startLateral)
+        const len = Math.sqrt(len2) || 1;
+        const lateral = (dx * abz - dz * abx) / len;
+        best = { dist: (i + t) * STEP, lateral, d2 };
       }
     }
     return best;

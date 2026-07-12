@@ -644,6 +644,39 @@ cornering-scrub and finish-teleport numbers precisely.
   why `CarSim.step` skips track relation once `this.finished` (finished cars
   coast straight). Don't reintroduce projection for finished cars; it made
   the soft boundary teleport-snap them (~43 m/frame) after the line.
+- **One lateral sign convention: `+` is the LEFT normal `(cos h, −sin h)`.**
+  Everything that offsets from the centerline uses it — `lane`, `racingOffset`,
+  `startLateral`, the boundary — but `project()` used to return the *opposite*
+  sign (`+` = right). It hid for the life of the project because every other
+  reader takes `|lateral|` (offroad, `LEAN_SPARE` room) or compares two laterals
+  to each other (`leanBack`'s `dl`), and both are sign-symmetric. The one place
+  that mixed the two was the soft boundary: it took the side from `project()`
+  and placed the car with the left normal, so running off one side **teleported
+  you across the road** (measured before the fix: −21.2 → +21.0 lateral in one
+  frame, a 42 m jump; Jason: "almost like it portals"). Fixed 2026-07-12 by
+  flipping `project()` to the house convention. If you add a signed-lateral
+  reader, it's left-positive.
+- The soft boundary is a **berm you glance off**, not a wall and not a clamp
+  (rewritten 2026-07-12 with the portal fix). At `ROAD_HALF_W + 14` it mirrors
+  the travel direction back across the boundary — `rel = velHeading − road
+  heading`, and reflecting `rel` about 0 flips the lateral part (`sin rel`) and
+  leaves the along-road part (`cos rel`) alone, so it turns you back in without
+  stopping you. `BOUNCE_KEEP` is restitution (0 = slide along it, 1 = full
+  mirror), `BOUNCE_SCRUB` bills the speed you carried *into* it, `BOUNCE_MIN`
+  keeps a gentle graze a slide rather than a hit. Three load-bearing details:
+  the bounce plays in over ~0.2 s through `bouncePending` (instant snapped the
+  mesh — same lesson as `kickPending`), it rotates **heading only** (a contact
+  kick moves heading+slip together to leave the travel direction alone; a berm
+  genuinely *changes where you're going*), and the scrub is billed to
+  `contactLoss` so the camera's accel signal doesn't pop the FOV.
+  Never *rebuild* the position from `sample()` to hold the car in — correct the
+  **overshoot** only. Out at 19 m of lever arm, `sample()`'s interpolated normal
+  and the polyline projection disagree by ~2 m, so re-placing the car snapped it
+  that far in one frame (the original code did this; it was a second, smaller
+  teleport riding along with the big one). Regression checks: fling the car off
+  each side (`__race.player.heading += ±1.0` at speed) and assert zero far-out
+  sign flips and no step bigger than a frame of travel; 16-seed AI pace is
+  unchanged to 0.01 s, since the AI never gets near the berm.
 - Player steering is smoothed in `raceTick` (`race.steer` ramps ~0.25 s to
   full lock) because digital keys at full lock always exceed grip; the
   smoothed value also drives the front-wheel visuals.
