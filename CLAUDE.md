@@ -484,6 +484,43 @@ sound is synthesized live with the Web Audio API.
   threshold acting as a feedback setpoint (impact pinned at exactly 5.00
   every frame — cooldown must gate slams too). `_contact`/`_hitCool` are
   pair state on the first car — fine for 2 cars, needs a pair key for 3+.
+- **The AI leans back** (Jason's call + playtested 2026-07-12, "perfect", the
+  natural sequel to speed-trading contact). `AIDriver.leanBack()` holds steering
+  pressure *into* a car that's leaning on him, so a door fight is two drivers
+  pushing and the contact model splits the difference. Three load-bearing
+  design points, two of which I got wrong first and only measurement caught:
+  1. It is steering **pressure** (added to `steerWant`), not a lane bias. The
+     obvious implementation — bias his aim lane toward you — is a **literal
+     no-op**: 1 m of lane at racing lookahead is only ~0.07 of steer, which is
+     *under* his own 0.12 re-press deadband, so his virtual keyboard never sees
+     it. Any future "nudge the AI's line" feature hits this same floor — if a
+     bias is smaller than the deadband it does not exist.
+  2. It is gated on **actual contact** (`CarSim.touching`, set by
+     `resolveContact`), never on proximity. Distance gating is not fixable by
+     tuning: at any believable reach, a car merely running *alongside* 2.6 m
+     away is inside it, so the AI steers into a player who is quietly holding
+     his own lane and drags you both across the road. He answers contact; he
+     never starts it, and he never blocks — pass him cleanly and he lets you.
+     `LEAN_HOLD` (0.35 s) keeps the lean alive through a bounce so it doesn't
+     strobe as panels part and re-touch.
+  3. The lean **fades out once the car being leaned on runs out of road**
+     (`LEAN_SPARE`) — he'll hold you door-to-door, he won't run you into the
+     weeds; that bound is what keeps this inside the forgiving physics. But the
+     fade applies *only* when the lean would shove you outward: when **you're**
+     the one running **him** off, he leans back with everything he has.
+  `aggro` (0..1) is rolled per racer in `makeRoster` **independent of skill** —
+  a 2★ can be a bruiser and a 5★ can be clean, so racecraft is a personality you
+  learn per name, not a second star bar. Freddy 0.2 (he gives you the room),
+  bosses 1.0 (your car is on the hood). Nothing on the opponent card hints at
+  it — deliberate for now, a bruiser is a surprise the first time.
+  Measured, 8 s of the player leaning on a straight — metres the AI is shoved
+  out of his lane: aggro 0 → 3.84 (the old passive AI: you push him clean off
+  the road), 0.5 → 1.48 (gives ground grudgingly), 1.0 → −2.15 (he wins the
+  shoving match). In a 12 s "try to run the AI off the road" test the passive AI
+  ends up 10.5 s in the dirt and drags the player off with it (8.9 s); at aggro
+  ≥0.5 **neither car leaves the road at all**. Balance is untouched: 16-seed
+  solo pace is identical to 0.01 s between aggro 0 and 1 — leaning is free when
+  nobody is touching you, which is the regression check to re-run.
 - Gearboxes are all automatics — the sim auto-shifts, so part names must
   not say "Manual" (Jason's call, 2026-07-10). Gear count is
   `max(tier.gears + closeRatioBonus, level.minGears)` in `effectiveStats`;

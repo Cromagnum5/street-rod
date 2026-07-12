@@ -302,6 +302,10 @@ function makeRoster() {
       name: names[i].name, flavor: names[i].flavor,
       carTier, skill, wager, boss: false, crown, carColor: colors[i],
       partBoost: Math.random() < skill ? 1 : 0,
+      // how hard he leans back when you lean on him (ai.js). Rolled independent
+      // of skill on purpose: a 2★ can be a bruiser and a 5★ can be clean, so
+      // racecraft is a personality you learn per name, not a second star bar.
+      aggro: 0.25 + Math.random() * 0.75,
     });
   }
   // a freebie so being broke never soft-locks the game
@@ -312,6 +316,7 @@ function makeRoster() {
       // the mercy run stays a stock lesser car so broke never means stuck
       freebie: true,
       carTier: Math.max(0, tier - 1), skill: 0.25, wager: 0, prize: 100, boss: false, partBoost: 0,
+      aggro: 0.2, // races for the love of it — he'll give you the room
       carColor: 0x8a8a82, // primer gray — he races for love, not paint
     };
   }
@@ -321,6 +326,7 @@ function makeRoster() {
     roster.push({
       name: b.name, flavor: b.flavor,
       carTier: tier + 1, skill: 0.8 + tier * 0.03, wager: 0, boss: true, partBoost: 1,
+      aggro: 1, // your car is on the hood: he will not give you an inch
       carColor: 0xff4fa3, // bosses are pink, always
     });
   }
@@ -531,7 +537,7 @@ function buildRaceScene(opp) {
   race.track = track;
   race.player = new CarSim(pStats, track, -3);
   race.ai = new CarSim(aStats, track, 3);
-  race.driver = new AIDriver(race.ai, track, opp.skill, 3);
+  race.driver = new AIDriver(race.ai, track, opp.skill, 3, opp.aggro ?? 0.6);
   race.playerMesh = buildCar(playerTier(), { parts: player.parts });
   // same paint AND same build as the card: if he showed up with a blower, it's there
   race.aiMesh = buildCar(aiTierData, { color: opp.carColor, parts: oppParts });
@@ -609,7 +615,7 @@ function raceTick(t, dt) {
     ai.throttleOut = race.aiRev;
   } else if (!race.over) {
     p.step(dt, thr, brk, steer);
-    const ctrl = race.driver.drive(dt, race.time - race.goTime, p.trackDist);
+    const ctrl = race.driver.drive(dt, race.time - race.goTime, p.trackDist, p);
     ai.step(dt, ctrl.throttle, ctrl.brake, ctrl.steer);
     race.aiSteer = ctrl.steer;
     const impact = resolveContact(p, ai, dt);

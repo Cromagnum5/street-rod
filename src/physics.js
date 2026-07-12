@@ -104,6 +104,8 @@ export class CarSim {
     this.groundPitch = 0;    // rad, ground attitude for the mesh root (+ = nose-down)
 
     // contact after-effects (resolveContact writes, step plays them out)
+    this.touching = false; // is another car's panel against mine right now? (AI
+                           // racecraft gates on this — see AIDriver.leanBack)
     this.kickPending = 0;  // rad of contact knock still to rotate in
     this.contactLoss = 0;  // m/s shed to contact this frame (camera reads it;
                            // negative when contact *gave* the car speed)
@@ -331,6 +333,7 @@ function applyContactImpulse(car, jx, jz, dt) {
 }
 
 export function resolveContact(a, b, dt) {
+  a.touching = b.touching = false;
   const cdx = a.x - b.x, cdz = a.z - b.z;
   const reach = 2 * (CONTACT_END + CONTACT_R);
   if (cdx * cdx + cdz * cdz > reach * reach) return 0;
@@ -378,6 +381,7 @@ export function resolveContact(a, b, dt) {
   // mutual-steer grind hovers at the slam threshold and machine-guns kicks
   const fresh = !a._contact;
   a._contact = true;
+  a.touching = b.touching = true;
 
   // closing speed along the deepest normal is the "impulse": it collapses to
   // ~0 once separated, so a tap and a slam produce different numbers without

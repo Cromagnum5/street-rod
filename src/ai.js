@@ -16,11 +16,46 @@
 import { ROAD_HALF_W } from "./track.js";
 import { POWER_GRIP_FLOOR } from "./physics.js";
 
+// Racecraft: how the driver reacts to a car leaning on him. He does not swerve
+// at you and he does not block — he simply refuses to be moved, holding a little
+// steering pressure into the car in his door, so a door-to-door fight is two
+// drivers each pushing and the contact model splits the difference.
+//
+// This is steering PRESSURE (added to steerWant), not a lane offset, and that
+// distinction is the whole feature: a lane bias big enough to feel (1 m) is only
+// ~0.07 of steer at racing lookahead, which is *under* the driver's own 0.12
+// re-press deadband — his virtual keyboard never sees it and the lean does
+// nothing at all (measured). Pressure goes through the same keyboard, so he
+// leans on you with the same clumsy human hands he drives with.
+//
+// Bounded so it stays racing and never becomes a punt:
+//  - it is gated on ACTUAL CONTACT (`car.touching`, set by resolveContact), not
+//    on proximity. Gating on lateral distance instead was measurably wrong: at
+//    any believable reach, a car merely running alongside 2.6 m away is inside
+//    it, so the AI would steer into a player who was quietly holding his own
+//    lane and drag you both across the road. He answers contact; he never
+//    starts it. LEAN_HOLD keeps the lean alive briefly through a bounce so it
+//    doesn't chatter as panels part and re-touch.
+//  - it needs real side-by-side overlap (SIDE_BY_SIDE), so a rear-ender doesn't
+//    read as a door-to-door fight,
+//  - it's a fraction of lock (LEAN_MAX), not a swerve,
+//  - and it fades out once the car being leaned on runs out of road
+//    (LEAN_SPARE). He'll hold you door-to-door; he won't run you into the
+//    weeds. That bound is what keeps this inside the forgiving physics.
+const SIDE_BY_SIDE = 5.5;  // m of longitudinal overlap that counts as alongside
+const LEAN_HOLD = 0.35;    // s the lean outlives the contact that triggered it
+const LEAN_MAX = 0.38;     // fraction of steering lock he'll hold into you
+const LEAN_SPARE = 2.4;    // m of road he leaves you before he stops leaning
+
 export class AIDriver {
-  constructor(car, track, skill, lanePreference = 2.5) {
+  constructor(car, track, skill, lanePreference = 2.5, aggression = 0.6) {
     this.car = car;
     this.track = track;
     this.skill = skill;
+    // 0..1: how hard he leans back when you lean on him. Racer personality —
+    // set per-opponent in makeRoster, not derived from skill, so a 2-star can
+    // be a bruiser and a 5-star can be clean.
+    this.aggression = aggression;
     this.lane = lanePreference;      // preferred lateral offset (stays out of your lane... mostly)
     // How much of the track's racing line this driver actually drives, vs just
     // holding his lane. 0 = holds his lane like a bus, 1 = drives the line.
@@ -38,10 +73,11 @@ export class AIDriver {
     this.steer = 0;                       // smoothed key steer, like race.steer
     this.steerKey = 0;                    // current key state: -1 / 0 / +1
     this.keyT = -1;                       // when the key state last changed
+    this.leanT = 99;                      // seconds since a panel last touched his
   }
 
   // Returns { throttle, brake, steer }
-  drive(dt, raceTime, playerDist) {
+  drive(dt, raceTime, playerDist, player = null) {
     const car = this.car;
     this.t += dt;
     if (raceTime < this.reaction) {
@@ -145,7 +181,10 @@ export class AIDriver {
     let dh = desired - car.heading;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
-    const steerWant = Math.max(-1, Math.min(1, dh * 2.4));
+    // ...plus the lean: pressure held into whoever is leaning on him. It rides
+    // on top of the pursuit want, so in a corner the line still gets driven —
+    // he leans while racing, he doesn't abandon the corner to fight you.
+    const steerWant = Math.max(-1, Math.min(1, dh * 2.4 + this.leanBack(dt, player)));
 
     // --- virtual keyboard: closed-loop key tapping ---
     // Press toward the wanted steer, release once past it — but the key
@@ -187,5 +226,39 @@ export class AIDriver {
     const brkKey = brake > 0.85 ? 1 : brake < 0.12 ? 0 : pPhase < brake ? 1 : 0;
 
     return { throttle: thrKey, brake: brkKey, steer: this.steer };
+  }
+
+  // Steering pressure (fraction of lock) held *into* a car leaning on him.
+  // Reactive by design: it only answers a car already against his panels, so
+  // you can still pass him cleanly if you're quicker — he leans back on you,
+  // he doesn't block you.
+  leanBack(dt, player) {
+    if (this.car.touching) this.leanT = 0;
+    else this.leanT += dt;
+    if (!player || this.aggression <= 0) return 0;
+    // fade out over LEAN_HOLD once you're off him, so bouncing apart and
+    // re-touching doesn't strobe the lean on and off
+    const fade = 1 - Math.min(1, this.leanT / LEAN_HOLD);
+    if (fade <= 0) return 0;
+    // alongside? (longitudinal overlap; both are on the same centerline metric)
+    // A rear-ender is contact too, and it must not read as a door fight.
+    const along = Math.abs(player.trackDist - this.car.trackDist);
+    const overlap = 1 - Math.min(1, along / SIDE_BY_SIDE);
+    if (overlap <= 0) return 0;
+    const dl = player.lateral - this.car.lateral; // + = player is track-left of him
+    const push = Math.sign(dl); // leaning always shoves you away from him
+    // Does he have room to lean without putting you in the dirt? Once your
+    // outside wheels near the edge the lean fades out — he'll hold you
+    // door-to-door, he won't run you off the road. This only applies when the
+    // lean would shove you *outward*: if he's the one being run out of road
+    // (you're inboard of him), he leans back with everything he has, which is
+    // exactly when a real driver would.
+    let room = 1;
+    if (push === Math.sign(player.lateral)) {
+      room = Math.max(0, Math.min(1,
+        (ROAD_HALF_W - LEAN_SPARE - Math.abs(player.lateral)) / 1.5));
+      if (room <= 0) return 0;
+    }
+    return push * overlap * fade * room * this.aggression * LEAN_MAX;
   }
 }
