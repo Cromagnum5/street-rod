@@ -59,21 +59,18 @@ export class AIDriver {
     // --- speed planning: slowest corner in the next few seconds ---
     // cornerGrip folds in the steady-state body-roll penalty, so soft-sprung
     // AI plans slower corners instead of understeering off the road
+    // Planning grip is *at or over* the car's real limit, because that is where
+    // a human actually drives: a keyboard steer over-asks for yaw, the car
+    // plows/slides a little, and it gets round the corner anyway on a 14 m road.
+    // Planning under the limit (this used to be 0.90-0.98) made the AI arrive at
+    // every corner with grip in hand and no way to spend it.
     const grip = (car.stats.cornerGrip ?? car.stats.grip)
-      * (0.90 + 0.08 * this.skill) * bandMul * bandMul;
-    // corner we're in (or about to enter): this is the cap the ease-off band
-    // and the brakes hold the car to. Straights are flat-out for everyone —
-    // vmax is asymptotic, so the target never drops below the car's own speed
-    let targetSpeed = car.vmax * 1.05;
-    for (let ahead = 8; ahead <= 15 + car.speed * 0.5; ahead += 7) {
-      const k = this.track.curvatureAt(car.trackDist + ahead);
-      if (k > 1e-4) targetSpeed = Math.min(targetSpeed, Math.sqrt(grip / k));
-    }
+      * (0.98 + 0.10 * this.skill) * bandMul * bandMul;
 
-    // corners further out: brake late, when physics demands it, instead of
-    // coasting down the moment a corner enters the lookahead. Scan the whole
-    // braking distance and find the decel the most binding corner requires.
-    const comfort = 4.0 + 3.2 * this.skill; // m/s^2 decel that gets the driver on the brakes
+    // The only thing that lifts the foot is a corner the car genuinely cannot
+    // make. Scan the whole braking distance and find the decel the most binding
+    // corner demands; brake only past a skill-scaled comfort threshold.
+    const comfort = 6.5 + 3.0 * this.skill; // m/s^2 decel that gets the driver on the brakes
     const scan = Math.max(60, car.speed * car.speed / (1.7 * comfort));
     let needBrake = 0;
     for (let ahead = 15; ahead <= scan; ahead += 12) {
@@ -86,19 +83,22 @@ export class AIDriver {
       }
     }
 
-    // The foot is down unless a corner physically demands otherwise (Jason,
-    // 2026-07-11): the old "hold the planned corner speed" cruise band idled
-    // at 55% duty and the lift-and-coast branch shut the throttle a corner
-    // early, so the AI arrived at every turn already slow — it averaged 0.53
-    // of its own grip limit mid-corner while a flat-out driver in the same car
-    // sat at 0.62 and won by 3 s. Corner pace is now capped by the brakes and
-    // the friction circle, which is what caps the player.
+    // The foot is down everywhere unless a corner physically demands otherwise.
+    // Speed in a corner is managed by the STEERING — the plow scrub and the slip
+    // angle bleed exactly as much as the corner needs — which is how the player
+    // drives (Jason, 2026-07-12: "in the Model A I keep the gas down for 100% of
+    // the race"). What used to live here was an "ease" band that dropped to 55%
+    // throttle whenever the car was carrying more than the planned corner speed.
+    // It fired in corners the car could take flat, and because the pedal is a
+    // duty-cycle tap it was *audible*: Jason could hear the AI feathering
+    // alongside him. Measured, the AI's corner throttle duty was 0.95 in a stock
+    // Model A whose corners only use 59% of the grip available — it was lifting
+    // for nothing. Corner pace is now capped by the brakes and the friction
+    // circle, which is what caps the player.
     let throttle = 1, brake = 0;
     if (needBrake > comfort) {
       brake = Math.min(1, needBrake / 7); // /7 not /8: arrive a hair under
       throttle = 0;
-    } else if (car.speed > targetSpeed + 2) {
-      throttle = 0.55; // carrying too much in: ease, don't coast
     }
 
     // friction-circle awareness: throttle eats lateral grip (physics.js), so

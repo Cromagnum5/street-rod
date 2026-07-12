@@ -271,41 +271,70 @@ sound is synthesized live with the Web Audio API.
   `tapPeriod`/`pedalPeriod` (skill-scaled tap cadence), `minHold`, the 0.85
   hold-solid and 0.12 re-press deadband thresholds. The AI's front-wheel
   visuals follow `race.aiSteer` in main.js — don't hardcode them straight.
-- AI throttle & braking (Jason playtested + approved 2026-07-12, "much
-  better"): **the foot is down by default, everywhere** — straights *and*
-  corners. Only two things lift it: the brakes, and a 55% ease when the car
-  is genuinely carrying too much into the turn (`speed > targetSpeed + 2`).
-  Skill expresses in how early it brakes and how close to the limit it
-  plans, never in a lifted throttle. Corner planning grip is
-  `0.90 + 0.08 * skill` (skill 1.0 still lands on the historical 0.98).
-  Braking is late: scan the full braking distance, compute the decel each
-  corner demands (`(v² − vc²)/2d`), and only brake past a skill-scaled
-  comfort threshold (`4.0 + 3.2*skill` m/s², brake sized `/7` not `/8` to
-  arrive a hair under). Boss races are shortened to match the longest street
-  race at the tier (`2700 + tier*200` in main.js) — a pink-slip race
-  shouldn't outlast the money races.
-  What this replaced (Jason, 2026-07-12: "I am faster in the turn than the
-  AI at all opponent levels, and none seem aggressive on the throttle in a
-  turn") — two things, both scaling with grip, so the deficit was *worst*
-  at the low levels:
-  1. a corner **cruise band** that idled at 55% duty once the planned corner
-     speed was reached, plus a **lift-and-coast** branch that shut the
-     throttle whenever a corner in braking range demanded >0.7× comfort
-     decel. Between them the AI arrived at every turn already slow: it held
-     **0.53 of its own grip limit** mid-corner where a flat-out driver in
-     the same car held 0.62 and won by 3.2 s.
+- AI throttle & braking (Jason playtested + approved 2026-07-12 twice, the
+  second time "AI driving much better in the turns"): **the foot is down
+  everywhere, and the STEERING is what manages corner speed** — the plow scrub
+  and the slip angle bleed off exactly as much as the corner needs. That is how
+  the player drives (Jason: "in the Model A I keep the gas down for 100% of the
+  race... I only let off the gas to brake"), so it is how the AI drives. The
+  **only** thing that lifts the foot is a corner the car genuinely cannot make.
+  Skill expresses in how late it brakes and how close to the limit it plans,
+  never in a lifted throttle. Corner planning grip is `0.98 + 0.10 * skill` —
+  note that's *at or over* the car's real limit, deliberately: a keyboard steer
+  over-asks for yaw, the car plows a little, and it gets round anyway on a 14 m
+  road. Planning **under** the limit is the bug that keeps coming back — it
+  makes the AI arrive with grip in hand and no way to spend it. Braking is late:
+  scan the full braking distance, compute the decel each corner demands
+  (`(v² − vc²)/2d`), and only brake past a skill-scaled comfort threshold
+  (`6.5 + 3.0*skill` m/s², brake sized `/7` not `/8` to arrive a hair under).
+  Boss races are shortened to match the longest street race at the tier
+  (`2700 + tier*200` in main.js) — a pink-slip race shouldn't outlast the
+  money races.
+  Three things have been cut from here, all the same mistake — a lift the car
+  didn't need:
+  1. a corner **cruise band** (55% duty once the planned corner speed was
+     reached) plus a **lift-and-coast** branch. The AI arrived at every turn
+     already slow: 0.53 of its own grip limit mid-corner vs 0.62 for a flat-out
+     driver in the same car, who won by 3.2 s.
   2. the friction-circle budget *interpolating* toward a lift instead of
      solving the circle (see the power-drifting entry below).
-  The rubber band now scales the **planning grip** (squared — speed goes as
-  √grip), not the speed target. Load-bearing: with the throttle flat-out by
-  default, a target-only band can only slow a *leading* AI, it can never
-  help a trailing one. Don't move it back onto `targetSpeed`.
-  Net (16-seed sim, corner throttle duty / race gap to a flat-out human in
-  the identical car): 1–2★ 0.80→0.91 duty, 3.16→1.99 s; 3★ 0.78→0.89,
-  2.39→1.29 s; 4★ 0.72→0.86, 1.87→0.86 s; boss 0.67→0.82, 1.52→0.54 s.
-  Every tier ~1.1–1.2 s faster per race, offroad stays 0.00 s, star ordering
-  intact. Balance watch: the boss took the same ~1.1 s — if a near-maxed car
-  can't beat it anymore, the planning-grip line above is the first knob.
+  3. the **55% "ease" band** (`speed > targetSpeed + 2`), cut 2026-07-12 after
+     Jason said he could *hear* the AI feathering alongside him. It was firing
+     in corners the car could take flat out, and because the pedal is a
+     duty-cycle tap, a partial throttle is audible. Measured: a stock Model A
+     uses only **59% of its available grip** in these corners — flat out is
+     simply correct there — yet the AI still braked 11% of corner time and eased
+     another 6%, for a corner throttle duty of 0.95. It was lifting for nothing.
+     `targetSpeed` had no other reader and went with it.
+  The rubber band scales the **planning grip** (squared — speed goes as √grip),
+  not a speed target. Load-bearing: with the throttle flat-out by default, a
+  target-only band can only slow a *leading* AI, it can never help a trailing
+  one. Don't reintroduce `targetSpeed` to hang it on.
+  Net of cut 3 (16-seed sim, stock Model A, corner throttle duty / race gap to
+  a flat-out human in the identical car): 1★ 0.94→**1.00** duty, 1.40→0.75 s;
+  3★ 0.95→1.00, 1.13→0.46 s; 4★ 0.95→1.00, 1.01→0.36 s; 5★ 0.96→1.00,
+  1.02→0.45 s. Offroad stays 0.00 s. Balance watch: the AI got ~0.6 s faster,
+  so boss margins tightened ~1.5 s — a maxed car still wins the pink-slip race
+  by 4.5–12.6 s across the ladder, but if the boss ever becomes unbeatable the
+  planning-grip line above is the first knob.
+- **Lifting is never worth it in this game — the brake pedal is a trap.** Not a
+  bug to fix, but know it before you tune anything: measured over 16 seeds, the
+  same car driven flat-out with *no brakes at all* beats a driver who brakes
+  properly at every tier — Model A 76.1 s vs 77.4, Bel Air stock 65.2 vs 73.2
+  (6 s faster **and it never leaves the road**), maxed 'Cuda 48.2 vs 62.9. The
+  steering scrub is a better brake than the brake, because you keep making power
+  and you keep your corner exit. Two reasons it's free: race progress is
+  centerline distance (`project()`), so a wide line costs nothing, and the road
+  plus soft margin is 28 m of run-off. At the top of the ladder the flat-out
+  line runs through the **dirt** for a quarter of the race, and the dirt is a
+  cheaper brake than the brakes (6.0 m/s² of offroad drag at 80 m/s *while you
+  keep the throttle*, vs 8.0 m/s² with the power cut) — which is why the AI is
+  still ~8 s down in a maxed 'Cuda: it won't rally-drive, and letting it costs
+  18 s/race offroad. **Known and deferred** (Jason, 2026-07-12: "we'll address
+  the dirt issue at some other time"). If it's ever taken up, the lever is the
+  free wide line / cheap dirt, **not** `PLOW_SCRUB` — turning that back up
+  re-breaks the steering-as-brake feel he explicitly rejected (see the
+  turning-must-not-act-as-a-brake gotcha).
 - AI launch (Jason's call, 2026-07-10, `a61b180`): the AI holds full
   throttle from the green — the skill-scaled `reaction` delay in `ai.js`
   gates only the steering/corner-planning brain, never the launch (it used
@@ -465,6 +494,17 @@ a fresh chance to bolt a box to nothing or bury it in its neighbour. 224 builds
 (7 cars × 4 visible categories × 4 levels, off both a stock and a maxed base)
 still runs in seconds. Re-run all four after *any* mesh edit: moving one box
 out from under another is exactly how these bugs get introduced.
+
+**Never use an AI as the player proxy in a balance sim.** Every balance number
+in this file predating 2026-07-12 was measured with a skill-1.0 `AIDriver`
+standing in for Jason — so the whole ladder was tuned against a player who
+*lifts in corners*, and Jason does not lift. That is why "the AI feathers and
+I'm faster mid-corner" survived two rounds of throttle fixes: the proxy had the
+same blind spot as the thing being measured, so the sim agreed with itself. The
+player proxy must be a **flat-out human**: pure-pursuit steer → digital key →
+the same `dt*9` ramp `raceTick` applies, `throttle = 1`, `brake = 0`, forever.
+It's ~25 lines and it is the only honest yardstick. Same lesson family as the
+banner-mirror one — an objective proxy that shares the defect proves nothing.
 
 For physics/balance questions, skip the browser: bundle a Node script that
 imports `physics.js` (and `Track` if needed) with the same esbuild
