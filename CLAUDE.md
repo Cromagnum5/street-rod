@@ -132,6 +132,22 @@ sound is synthesized live with the Web Audio API.
   tier / 79.8 −1 tier, 2★ 77.9 / 79.5, 3★ 72.7 / 73.7, 4★ 64.6 / 65.2
   (Jason's Model A case, was ~85+), +1-tier 4★ 68.1, boss 58.6. Upgraded
   opponents also *sound* built for free (`soundSpec` gets the same parts).
+- Crown era — after THE KING (Jason's call, 2026-07-12). `crown` = player
+  carTier 6, the only way to own the 'Cuda, and there's no boss left to
+  race. Endgame rosters are their own mode in `makeRoster`/`aiParts`:
+  skill draws 0.5–1.0 (3–5★ only), builds run `1 + round(skill*2)` part
+  levels with a **floor of 1** (nobody brings a stock car to race the
+  champ; the −1 jitter and `partBoost` decide who shows up actually maxed),
+  and wagers jump to `(300 + skill*800 + carTier*60)` — $1,025–$1,400 vs the
+  old $450–$620, so two wins ≈ one top-shelf part. Same lesser-iron rule
+  as the street ladder: a −1-tier Charger buys one extra part level.
+  16-seed sim at the tier-6 race length (skill-1.0 AI as the player proxy,
+  maxed 'Cuda 61.6 s): crown 3★ 68.3, 4★ 62.4, 5★ maxed 61.9, 5★ maxed
+  Charger 64.2 — a maxed 'Cuda still wins every one, but the 4–5★ races are
+  ~1 s knife fights instead of the 21 s walkover the old stars−2 formula
+  gave (1★ stock 'Cuda was 82.5 s). A player who *stops* upgrading (level-2
+  parts, 66.8 s) now loses to the 4–5★ challengers — the crown's money sink
+  is the point. The mercy freebie is exempt (no `crown` flag on Freddy).
 - Camera drama comes from **acceleration, not speed**: framing follows the
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big

@@ -261,22 +261,28 @@ let roster = [], rosterIdx = 0, cardEl = null;
 
 function makeRoster() {
   const tier = player.carTier;
+  // Crown: the King is beaten and the 'Cuda is yours, so the ladder is over.
+  // Nobody brings a stock car to race the champ — the street sends its best,
+  // built to the teeth, and the money on the hood goes up to match.
+  const crown = tier === 6;
   const names = [...STREET_RACERS].sort(() => Math.random() - 0.5);
   const colors = [...RACER_COLORS].sort(() => Math.random() - 0.5);
   roster = [];
   for (let i = 0; i < 4; i++) {
-    const skill = 0.2 + Math.random() * 0.6;
+    const skill = crown ? 0.5 + Math.random() * 0.5 : 0.2 + Math.random() * 0.6;
     // aiParts compensates a lesser car with extra part levels, but can't strip
     // parts below stock — so the better-car draw is reserved for 3★+ drivers
     // (a 2★ in a +1-tier car would outrun their star label)
     let bump = [0, 0, -1, 1][Math.floor(Math.random() * 4)];
     if (bump === 1 && skill < 0.55) bump = 0;
     const carTier = Math.max(0, Math.min(6, tier + bump));
-    let wager = Math.round((40 + skill * 220 + carTier * 60) / 25) * 25;
+    let wager = crown
+      ? Math.round((300 + skill * 800 + carTier * 60) / 25) * 25
+      : Math.round((40 + skill * 220 + carTier * 60) / 25) * 25;
     wager = Math.min(wager, Math.max(25, player.money)); // never dangle a bet you can't cover
     roster.push({
       name: names[i].name, flavor: names[i].flavor,
-      carTier, skill, wager, boss: false, carColor: colors[i],
+      carTier, skill, wager, boss: false, crown, carColor: colors[i],
       partBoost: Math.random() < skill ? 1 : 0,
     });
   }
@@ -455,12 +461,17 @@ function aiParts(opp) {
   // a 1★ in lesser iron shows up upgraded to the player-tier stock pace —
   // never a free win just because the draw handed them an older car.
   // Memoized: the card shows this build, so it has to be the one that races.
+  // Crown racers (post-King) use their own curve: nothing stock ever shows up
+  // to race the champ. 3★ arrives with bolt-ons everywhere, 4–5★ with a fully
+  // built car — and the −1 jitter/partBoost decide which of them is maxed out.
   if (opp.parts) return opp.parts;
   const deficit = opp.freebie ? 0 : player.carTier - opp.carTier;
   const lvl = opp.boss
     ? Math.min(3, 1 + Math.round(opp.skill))
-    : Math.max(0, Math.round(opp.skill * 5) - 2) + deficit;
-  const floor = opp.boss ? 0 : Math.max(0, deficit);
+    : opp.crown
+      ? Math.min(3, 1 + Math.round(opp.skill * 2) + deficit)
+      : Math.max(0, Math.round(opp.skill * 5) - 2) + deficit;
+  const floor = opp.boss ? 0 : Math.max(opp.crown ? 1 : 0, deficit);
   const p = {};
   for (const k of PART_KEYS) p[k] = Math.max(floor, Math.min(3, lvl + (Math.random() < 0.4 ? -1 : 0)));
   if (!opp.boss && opp.partBoost) {
