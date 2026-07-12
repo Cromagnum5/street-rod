@@ -22,6 +22,10 @@ export class AIDriver {
     this.track = track;
     this.skill = skill;
     this.lane = lanePreference;      // preferred lateral offset (stays out of your lane... mostly)
+    // How much of the track's racing line this driver actually drives, vs just
+    // holding his lane. 0 = holds his lane like a bus, 1 = drives the line.
+    // Skill buys the line: 1-star ~0.44, 3-star ~0.70, 5-star/boss 1.0.
+    this.lineWeight = 0.25 + 0.75 * skill;
     this.reaction = 0.35 + (1 - skill) * 0.9; // seconds before the steering brain wakes up
     this.wobblePhase = Math.random() * 10;
     this.t = 0;
@@ -119,13 +123,20 @@ export class AIDriver {
     const driveRoom = Math.max(POWER_GRIP_FLOOR, Math.sqrt(Math.max(0, 1 - latNeed * latNeed)));
     if (instLoad > 1e-3) throttle = Math.min(throttle, driveRoom / instLoad);
 
-    // --- steering: pure pursuit toward centerline + preferred lane ---
+    // --- steering: pure pursuit toward the line the driver is trying to drive ---
     const lookahead = 10 + car.speed * (0.55 + 0.25 * this.skill);
-    const target = this.track.sample(car.trackDist + lookahead);
+    const aimDist = car.trackDist + lookahead;
+    const target = this.track.sample(aimDist);
+    // Where he's aiming: somewhere between "hold my lane" and the true racing
+    // line, by skill (see lineWeight). A weak driver isn't driving a *wrong*
+    // line, he's driving a shallow one — he uses less of the road, so he gets
+    // the shape of the corner right but leaves time on it. A 1-star uses about
+    // half the line's width, a 5-star/boss drives it properly.
+    const line = this.track.racingOffset(aimDist);
     // slow lane drift, not a slalom: the period is long enough (~16 s) that
     // holding it costs only occasional small trims (Jason's wobble fix #2)
     const wobble = (1 - this.skill) * Math.sin(this.t * 0.4 + this.wobblePhase) * 0.5;
-    let lane = this.lane + wobble;
+    let lane = line * this.lineWeight + this.lane * (1 - this.lineWeight) + wobble;
     lane = Math.max(-(ROAD_HALF_W - 1.6), Math.min(ROAD_HALF_W - 1.6, lane));
     const nx = Math.cos(target.heading), nz = -Math.sin(target.heading);
     const tx = target.pos.x + nx * lane, tz = target.pos.z + nz * lane;

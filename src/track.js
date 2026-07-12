@@ -17,6 +17,20 @@ const PRE = 400, POST = 900; // visual road extensions (see buildMeshes)
 const SELF_CLEAR = 210;
 const SELF_ARC = 350;
 
+// Racing-line relaxation (see racingOffset). 400 passes converges on these
+// corner radii with room to spare and costs ~2 ms on a 3000 m track, once.
+const LINE_ITERS = 400;
+const LINE_RELAX = 0.35;
+// How far off the centerline the line is allowed to swing. This is NOT set by
+// the road edge (that would allow 5.5) — it's set by what the AI can actually
+// hold. The AI steers on a virtual keyboard with a long lookahead, so it cuts
+// the apex and overshoots on exit; give it the full-width line and it drives
+// straight off the road. Measured over 24 seeds at skill 1.0, corridor vs
+// (time gain, offroad): 5.5 -> (-1.3 s, 5.4 s off), 4.8 -> (-0.3 s, 2.3 s),
+// 4.2 -> (+0.2 s, 0.8 s), 3.6 -> (+0.34 s, 0.2 s). A shallower line the driver
+// can hold beats a perfect one he can't.
+const LINE_HALF_W = 3.6;
+
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -134,6 +148,56 @@ export class Track {
     this.points = best.points;
     this.headings = best.headings;
     this._rand = best.rand;
+    this._line = null; // racing-line offsets, built on first use
+  }
+
+  // ---------- racing line ----------
+  // The path through the road corridor that minimizes curvature — i.e. the
+  // out-in-out line, arrived at rather than authored: relax every station
+  // toward the midpoint of its neighbours (which straightens the path), clamp
+  // it back inside the corridor, repeat. Corners pull the line to the inside
+  // and the entries/exits swing wide on their own.
+  //
+  // It's worth real time. Two identical cars, both flat out, neither lifting,
+  // differing only in the point they aim at: the line beats the centerline by
+  // 0.60-0.80 s over a 3000 m race and won 32/32 seeds in the low/mid cars
+  // (measured 2026-07-12). The gain is NOT the textbook one — nobody is
+  // braking and the low/mid cars never touch the dirt on either path. It comes
+  // from the straighter path asking for less steering, so the car spends less
+  // time over the grip cap bleeding speed to PLOW_SCRUB and SLIP_SCRUB. Which
+  // is also why a *bad* line loses: hugging the inside of every corner cost
+  // 1.2 s, running the outside cost 5.3 s and 9 s in the dirt.
+  //
+  // Ends are pinned to the centerline, so the launch and the finish are
+  // unchanged (both zones are straight anyway).
+  racingOffset(d) {
+    if (!this._line) this._buildRacingLine();
+    const f = THREE.MathUtils.clamp(d / STEP, 0, this._line.length - 1.001);
+    const i = Math.floor(f), t = f - i;
+    return this._line[i] * (1 - t) + this._line[i + 1] * t;
+  }
+
+  _buildRacingLine() {
+    const n = this.points.length;
+    const off = new Float64Array(n);
+    const halfW = LINE_HALF_W;
+    const nx = new Float64Array(n), nz = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      nx[i] = Math.cos(this.headings[i]);
+      nz[i] = -Math.sin(this.headings[i]);
+    }
+    for (let pass = 0; pass < LINE_ITERS; pass++) {
+      for (let i = 1; i < n - 1; i++) {
+        const a = this.points[i - 1], b = this.points[i + 1], c = this.points[i];
+        const ax = a.x + nx[i - 1] * off[i - 1], az = a.z + nz[i - 1] * off[i - 1];
+        const bx = b.x + nx[i + 1] * off[i + 1], bz = b.z + nz[i + 1] * off[i + 1];
+        // the straightening target, projected back onto this station's normal
+        const want = ((ax + bx) / 2 - c.x) * nx[i] + ((az + bz) / 2 - c.z) * nz[i];
+        off[i] += (want - off[i]) * LINE_RELAX;
+        off[i] = Math.max(-halfW, Math.min(halfW, off[i]));
+      }
+    }
+    this._line = off;
   }
 
   // Position/heading at distance d along the track. `elev` is the road height

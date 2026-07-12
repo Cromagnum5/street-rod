@@ -77,7 +77,8 @@ sound is synthesized live with the Web Audio API.
 - `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
-  hint)`. `sample` also returns `elev`/`grade` — gentle rolling hills landed
+  hint)`, `racingOffset(d)` (the racing line — see the line entry in Design
+  intent; lazily built once per track, ~2 ms). `sample` also returns `elev`/`grade` — gentle rolling hills landed
   2026-07-11: a slope random walk with a soft spring toward mid-height
   (underdamped, ~500 m wavelength), elevation confined to [0, 6 m] so the
   flat ground plane never shows above the road, grades ≲4%, a smoothstep
@@ -317,6 +318,41 @@ sound is synthesized live with the Web Audio API.
   so boss margins tightened ~1.5 s — a maxed car still wins the pink-slip race
   by 4.5–12.6 s across the ladder, but if the boss ever becomes unbeatable the
   planning-grip line above is the first knob.
+- The racing line is real and skill buys it (Jason's call, 2026-07-12: "high
+  tiers should take perfect lines, lower tiers less perfect but still in the
+  ballpark"). `Track.racingOffset(d)` is the curvature-minimizing path through
+  the corridor — not authored, *relaxed*: each station eases toward the midpoint
+  of its neighbours (which straightens the path) and gets clamped back inside,
+  400 passes. Out-in-out falls out on its own. `AIDriver.lineWeight`
+  (`0.25 + 0.75*skill`) blends the aim point from "hold my lane" to the line, so
+  a 1★ drives a *shallow* line and the boss drives it properly — a weak driver
+  isn't driving a wrong line, he's using less of the road. Measured (24 seeds,
+  solo, vs the old lane-holder): 1★ +0.14–0.23 s, 3★ +0.24–0.35 s, boss
+  +0.32–0.50 s, and AI offroad went *down* (3★ 'Cuda 0.4 s → 0.0 s).
+  Two load-bearing details:
+  1. **`LINE_HALF_W` is set by what the AI can hold, not by the road edge.** The
+     road allows 5.5; the line uses **3.6**. The AI steers on a virtual keyboard
+     with a long lookahead (longest at high skill), so it cuts the apex and
+     overshoots on exit — hand it the full-width line and it drives off the road.
+     At skill 1.0, corridor → (time gain, offroad): 5.5 → (−1.3 s, 5.4 s off!),
+     4.8 → (−0.3 s, 2.3 s), 4.2 → (+0.2 s, 0.8 s), 3.6 → (+0.34 s, 0.2 s). A
+     shallow line the driver can hold beats a perfect one he can't. If the AI's
+     lookahead or tap cadence is ever retuned, re-sweep this.
+  2. The gain is **not** the textbook one. Nobody is braking and the low/mid cars
+     never touch the dirt on either path — the line pays because the straighter
+     path asks for less steering, so the car spends less time over the grip cap
+     bleeding speed to `PLOW_SCRUB`/`SLIP_SCRUB`. Which is why a *bad* line
+     genuinely loses: hugging every apex costs 1.2 s, running every corner wide
+     costs 5.3 s and 9 s in the dirt. Good line rewarded, bad line punished,
+     without touching the forgiving physics.
+  Known conservatism: the AI still plans its braking off `curvatureAt` (the
+  *centerline*), which is tighter than the line it actually drives, so it brakes
+  a hair early. It barely brakes at all, so this is left alone.
+  For the player the same line is worth **0.60–0.80 s** over a 3000 m race
+  (32/32 seeds in the low/mid cars) — measured with two flat-out proxies,
+  identical spec, neither lifting, differing only in the aim point. That's the
+  answer to "does the line matter": it does, and it's now worth roughly what one
+  star of AI skill is worth.
 - **Lifting is never worth it in this game — the brake pedal is a trap.** Not a
   bug to fix, but know it before you tune anything: measured over 16 seeds, the
   same car driven flat-out with *no brakes at all* beats a driver who brakes
