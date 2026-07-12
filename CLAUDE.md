@@ -100,8 +100,28 @@ sound is synthesized live with the Web Audio API.
 - A broke player must never soft-lock — `makeRoster()` injects a $0 "pride
   run" opponent when cash < $25.
 - Balance target: stock car beats 1–2★ racers, upgrades needed for 4–5★,
-  near-maxed car beats the boss. Street racers run near-stock (`aiParts()`),
-  bosses get built machines.
+  near-maxed car beats the boss. Street racer builds scale with stars
+  (`aiParts()` in main.js, reworked 2026-07-11 after Jason found a 4★ easily
+  beatable stock): since flat-out straights landed, driver skill is worth
+  <1 s/race in the sim — **parts are the real difficulty lever**. Street
+  level = `max(0, round(skill*5) − 2) + (playerTier − opp.carTier)`:
+  1–2★ stock-pace, 3★ bolt-ons, 4★ a built car, and one tier of lesser
+  iron buys one extra level (in this data one tier ≈ one part level almost
+  exactly — Model A L2 70.3 s vs Deuce L1 69.7 s, 16-seed sim). The tier
+  bump is a **baseline, not a bonus** (Jason's tweak, 2026-07-11): the
+  stars term floors at 0 and the per-part −1 jitter floors at the deficit,
+  so even a 1★ in a Model A at Deuce level runs Deuce-stock pace (79.8 s
+  vs 78.0 ref) instead of a free win (~89 s stock). Exception:
+  Free-Ride Freddy carries `freebie: true` and skips the deficit baseline —
+  the mercy run stays a stock lesser car so broke never means stuck. The
+  tier term can't strip below stock, so `makeRoster` reserves the +1-tier
+  car draw for skill ≥ 0.55 (a 2★ in a better car would outrun its label).
+  `opp.partBoost` (chance = skill, previously assigned but never read)
+  bumps one random "pride part" a level. Bosses keep their own formula.
+  16-seed ladder at player tier 1 (stock proxy ref 78.0 s): 1★ 78.3 same
+  tier / 79.8 −1 tier, 2★ 77.9 / 79.5, 3★ 72.7 / 73.7, 4★ 64.6 / 65.2
+  (Jason's Model A case, was ~85+), +1-tier 4★ 68.1, boss 58.6. Upgraded
+  opponents also *sound* built for free (`soundSpec` gets the same parts).
 - Camera drama comes from **acceleration, not speed**: framing follows the
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big

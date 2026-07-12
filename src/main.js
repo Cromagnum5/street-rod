@@ -266,7 +266,12 @@ function makeRoster() {
   roster = [];
   for (let i = 0; i < 4; i++) {
     const skill = 0.2 + Math.random() * 0.6;
-    const carTier = Math.max(0, Math.min(6, tier + [0, 0, -1, 1][Math.floor(Math.random() * 4)]));
+    // aiParts compensates a lesser car with extra part levels, but can't strip
+    // parts below stock — so the better-car draw is reserved for 3★+ drivers
+    // (a 2★ in a +1-tier car would outrun their star label)
+    let bump = [0, 0, -1, 1][Math.floor(Math.random() * 4)];
+    if (bump === 1 && skill < 0.55) bump = 0;
+    const carTier = Math.max(0, Math.min(6, tier + bump));
     let wager = Math.round((40 + skill * 220 + carTier * 60) / 25) * 25;
     wager = Math.min(wager, Math.max(25, player.money)); // never dangle a bet you can't cover
     roster.push({
@@ -279,6 +284,9 @@ function makeRoster() {
   if (player.money < 25) {
     roster[0] = {
       name: "Free-Ride Freddy", flavor: "Races for the love of it. Slips you gas money if you win.",
+      // freebie: exempt from the tier-deficit parts baseline in aiParts —
+      // the mercy run stays a stock lesser car so broke never means stuck
+      freebie: true,
       carTier: Math.max(0, tier - 1), skill: 0.25, wager: 0, prize: 100, boss: false, partBoost: 0,
       carColor: 0x8a8a82, // primer gray — he races for love, not paint
     };
@@ -427,13 +435,29 @@ states.RACE = {
 };
 
 function aiParts(opp) {
-  // difficulty translates to bolt-ons; street racers run near-stock so a fresh
-  // player can win, bosses show up with a properly built machine
+  // Stars are the promise: since straights went flat-out for every skill,
+  // driver skill is worth <1 s/race — parts are the real difficulty lever.
+  // Street builds run stars−2 part levels (1–2★ stock, 3★ bolt-ons, 4★ a
+  // genuinely built car), and one tier of lesser iron buys one extra level —
+  // in this data one tier ≈ one part level almost exactly, so a hot-rodded
+  // Model A honestly matches its star label against Deuce-class company.
+  // Bosses keep their own formula: always a properly built machine.
+  // The tier bump is a baseline, not a bonus (Jason, 2026-07-11): the stars
+  // term floors at 0 and the per-part jitter floors at the deficit, so even
+  // a 1★ in lesser iron shows up upgraded to the player-tier stock pace —
+  // never a free win just because the draw handed them an older car.
+  const deficit = opp.freebie ? 0 : player.carTier - opp.carTier;
   const lvl = opp.boss
     ? Math.min(3, 1 + Math.round(opp.skill))
-    : Math.max(0, Math.round(opp.skill * 1.6) - (Math.random() < 0.5 ? 1 : 0));
+    : Math.max(0, Math.round(opp.skill * 5) - 2) + deficit;
+  const floor = opp.boss ? 0 : Math.max(0, deficit);
   const p = {};
-  for (const k of PART_KEYS) p[k] = Math.max(0, Math.min(3, lvl + (Math.random() < 0.4 ? -1 : 0)));
+  for (const k of PART_KEYS) p[k] = Math.max(floor, Math.min(3, lvl + (Math.random() < 0.4 ? -1 : 0)));
+  if (!opp.boss && opp.partBoost) {
+    // their one pride part — Donna really did rebuild that motor
+    const k = PART_KEYS[Math.floor(Math.random() * PART_KEYS.length)];
+    p[k] = Math.min(3, p[k] + 1);
+  }
   return p;
 }
 
