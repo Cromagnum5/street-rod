@@ -457,6 +457,19 @@ cornering-scrub and finish-teleport numbers precisely.
   a gap under the lane. Same lesson family as the banner-mirror one:
   perception tests need an objective proxy (here, pixel-comparing road
   center vs offroad in headless screenshots — they were byte-identical).
+  **`wedge()` in carmesh.js had the identical bug**, also since the first
+  commit, found 2026-07-12 when Jason said the 'Cuda's windshield "only
+  shows up when viewed from the side looking forward — like the glass
+  polygon is facing backwards". It was: every face was wound clockwise from
+  outside, so with FrontSide culling the near surfaces vanished and you saw
+  through to the far interior ones. It hid because `flip` negates z, and
+  that mirror reverses handedness — it *cancelled* the bug, so every
+  fastback and rear window was correct while every windshield was inverted
+  (hence the winding now flips back explicitly when `flip` is set). Objective
+  proxy for this one, since a screenshot can't see it: the wedges are convex,
+  so a triangle is correctly wound iff its normal points away from the
+  prism's centroid — that check said 72 of 112 triangles faced inward before
+  the fix, 0 after. Write that check before trusting a mesh render.
 - `/home/cromulon` briefly had a stray commit-less `.git` (deleted
   2026-07-10). If `git add -A` ever stages home-dir files again, stop —
   wrong repo root.

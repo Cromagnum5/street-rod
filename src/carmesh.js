@@ -29,16 +29,23 @@ function wedge(w, h, d, mat, flip = false) {
     // top edge (at the back)
     [-hw, h, -d / 2 * s], [hw, h, -d / 2 * s],
   ];
+  // wound counter-clockwise seen from outside. `flip` mirrors z, which reverses
+  // handedness, so its triangles have to be reversed back or the prism renders
+  // inside-out: with FrontSide culling you lose the near faces and see straight
+  // through to the far ones (a windshield that only appears from behind).
   const idx = [
-    0, 2, 1, 0, 3, 2,        // bottom
-    0, 1, 5, 0, 5, 4,        // back
-    3, 5, 2, 3, 4, 5,        // slope
-    0, 4, 3,                 // left
-    1, 2, 5,                 // right
+    0, 1, 2, 0, 2, 3,        // bottom
+    0, 5, 1, 0, 4, 5,        // back
+    3, 2, 5, 3, 5, 4,        // slope
+    0, 3, 4,                 // left
+    1, 5, 2,                 // right
   ];
   const g = new THREE.BufferGeometry();
   const pos = [];
-  for (const i of idx) pos.push(...verts[i]);
+  for (let i = 0; i < idx.length; i += 3) {
+    const tri = flip ? [idx[i], idx[i + 2], idx[i + 1]] : [idx[i], idx[i + 1], idx[i + 2]];
+    for (const k of tri) pos.push(...verts[k]);
+  }
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat);
@@ -191,7 +198,8 @@ function buildMuscle(paint, accentMat) {
   // the windshield foot, the fastback and the spoiler legs. Stop it short and
   // those float over the deck with open air underneath.
   const belt = box(1.68, 0.2, 3.15, paint); belt.position.set(0, 0.97, -0.575); g.add(belt);
-  const ws = wedge(1.55, 0.48, 0.75, GLASS); ws.position.set(0, 1.06, 0.62); g.add(ws);
+  // windshield is the same width as the side glass so their edges line up
+  const ws = wedge(1.5, 0.48, 0.75, GLASS); ws.position.set(0, 1.06, 0.62); g.add(ws);
   // greenhouse sides: side glass forward, solid quarter panels aft. The roof
   // needs them or the cabin is an open box you can see straight through.
   const sideGlass = box(1.5, 0.42, 0.73, GLASS); sideGlass.position.set(0, 1.26, -0.115); g.add(sideGlass);
