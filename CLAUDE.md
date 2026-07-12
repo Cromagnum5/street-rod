@@ -185,6 +185,19 @@ sound is synthesized live with the Web Audio API.
   gave (1★ stock 'Cuda was 82.5 s). A player who *stops* upgrading (level-2
   parts, 66.8 s) now loses to the 4–5★ challengers — the crown's money sink
   is the point. The mercy freebie is exempt (no `crown` flag on Freddy).
+  **One roster slot is a guaranteed peer** (Jason, 2026-07-12: "there should be
+  opponents with max'd out cars and max skill to choose from"): the random crown
+  draw alone could deal a board of 3★ bolt-on cars, and a maxed 'Cuda has nothing
+  to prove against those — so `makeRoster` overwrites one crown entry with skill
+  1.0, carTier 6 and an explicit all-3 `parts` (`aiParts` returns a pre-set
+  build, which is also what the card portrait renders), at the top wager on the
+  board, $1,450. Alongside it the `−1` build jitter now **fades with skill in
+  crown mode** (`0.4 * (1 − skill)`, still a flat 0.4 on the street): a 5★
+  challenger arrives with the car actually finished rather than one carb short,
+  so several maxed rivals show up per roster, not one. Measured over 6 rosters:
+  1–3 maxed 5★ 'Cudas each, never zero (was: rarely any). Pace is unchanged —
+  this only decides *who shows up*, so the 61.9 vs 61.6 s knife fight above is
+  still what the peer race runs.
 - Upgrades you can **see** (Jason's call, 2026-07-12: "reward the player for
   upgrading parts on each model"). Four of the six parts show on the car; the
   other two honestly don't:

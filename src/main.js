@@ -308,6 +308,23 @@ function makeRoster() {
       aggro: 0.25 + Math.random() * 0.75,
     });
   }
+  // The crown roster always fields one true peer: 5★, a 'Cuda of his own, and
+  // every part maxed. The random crown draw alone can hand you a board of 3★
+  // bolt-on cars, and a maxed 'Cuda has nothing to prove against those — so one
+  // slot is reserved for the race the endgame is actually for. He is the biggest
+  // purse on the board, and the card shows him honestly: five lit stars, full
+  // pips, blower and slicks in the portrait.
+  if (crown) {
+    const ringer = roster[Math.floor(Math.random() * roster.length)];
+    ringer.skill = 1;
+    ringer.carTier = 6;
+    ringer.parts = Object.fromEntries(PART_KEYS.map((k) => [k, 3])); // aiParts honors a pre-set build
+    ringer.partBoost = 0; // nothing left to boost
+    ringer.wager = Math.min(
+      Math.round((300 + 800 + 6 * 60) / 25) * 25,
+      Math.max(25, player.money),
+    );
+  }
   // a freebie so being broke never soft-locks the game
   if (player.money < 25) {
     roster[0] = {
@@ -498,8 +515,12 @@ function aiParts(opp) {
       ? Math.min(3, 1 + Math.round(opp.skill * 2) + deficit)
       : Math.max(0, Math.round(opp.skill * 5) - 2) + deficit;
   const floor = opp.boss ? 0 : Math.max(opp.crown ? 1 : 0, deficit);
+  // The jitter is what leaves a car a part short of its class. Out on the street
+  // that's flavor, but in the crown era it fades with skill: a 5★ challenger
+  // arrives with the car actually finished, not one carb short of it.
+  const jitter = opp.crown ? 0.4 * (1 - opp.skill) : 0.4;
   const p = {};
-  for (const k of PART_KEYS) p[k] = Math.max(floor, Math.min(3, lvl + (Math.random() < 0.4 ? -1 : 0)));
+  for (const k of PART_KEYS) p[k] = Math.max(floor, Math.min(3, lvl + (Math.random() < jitter ? -1 : 0)));
   if (!opp.boss && opp.partBoost) {
     // their one pride part — Donna really did rebuild that motor
     const k = PART_KEYS[Math.floor(Math.random() * PART_KEYS.length)];
