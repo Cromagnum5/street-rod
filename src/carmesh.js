@@ -208,12 +208,15 @@ function buildMuscle(paint, accentMat) {
   // edge's vertical back face pokes out ahead of it as a second pane of glass
   const roof = box(1.55, 0.1, 1.18, paint); roof.position.set(0, 1.5, -0.31); g.add(roof);
   const fast = wedge(1.55, 0.48, 1.0, paint, true); fast.position.set(0, 1.06, -1.4); g.add(fast);
-  // backlight lying on the fastback slope (rise 0.48 over run 1.0), lifted
-  // along the slope normal so it doesn't z-fight the paint under it
+  // backlight lying on the fastback slope (rise 0.48 over run 1.0). It can't sit
+  // truly recessed — the fastback is a solid prism, so an inset pane just gets
+  // buried in it — so sink it until only 5 mm clears the paint: enough to beat
+  // z-fighting, too thin to read as a slab stuck on the roof.
   const slope = Math.atan2(0.48, 1.0);
-  const bl = box(1.35, 0.05, 0.92, GLASS);
+  const blOff = -0.015;
+  const bl = box(1.35, 0.04, 0.92, GLASS);
   bl.rotation.x = -slope;
-  bl.position.set(0, 1.3 + 0.03 * Math.cos(slope), -1.4 - 0.03 * Math.sin(slope));
+  bl.position.set(0, 1.3 + blOff * Math.cos(slope), -1.4 - blOff * Math.sin(slope));
   g.add(bl);
   // racing stripe: hood and roof, broken by the glass like the real thing
   const hstripe = box(0.42, 0.02, 1.28, accentMat); hstripe.position.set(0, 0.885, 1.65); g.add(hstripe);
