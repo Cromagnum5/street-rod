@@ -392,9 +392,36 @@ cornering-scrub and finish-teleport numbers precisely.
   the soft boundary teleport-snap them (~43 m/frame) after the line.
 - Player steering is smoothed in `raceTick` (`race.steer` ramps ~0.25 s to
   full lock) because digital keys at full lock always exceed grip; the
-  smoothed value also drives the front-wheel visuals. Over-grip speed scrub
-  in physics is deliberately gentle (10%/s cap); the separate slip-angle
-  scrub (`SLIP_SCRUB`) stacks on top when sideways.
+  smoothed value also drives the front-wheel visuals.
+- **Turning must not act as a brake** (Jason, 2026-07-12: "steering can be
+  used as braking, the effect is so pronounced", worst on low tiers —
+  playtested + approved, "much better"). Two speed penalties bill the same
+  event: the plow scrub (over-grip) and `SLIP_SCRUB` (sideways). The plow
+  scrub charges by the *ratio* `excess = yawRate / velYawMax`, and that is
+  the trap: a held `steer = 1` asks for `maxYaw = 2.2/(1 + v/18)`, which at
+  any real speed is **3–5x more yaw than the tires can deliver**, so `excess`
+  is never near 1 — it saturates the cap instantly, and the cap is a fraction
+  of *speed* per second, i.e. a speed-proportional decel. At the old
+  0.05/cap-0.10 that measured **37–77% of braking decel** (Model A stock
+  73→43 mph over 3 s of turning) and did 3–7x the damage of the slip scrub.
+  Low tiers got it worst for a structural reason: **low grip → smaller
+  `velYawMax` → bigger `excess` for the same input**, so they pin the cap
+  harder *and* have no power to recover. Now `PLOW_SCRUB` 0.018 / cap 0.035
+  (13–28% of braking), because the real consequence for over-driving is the
+  slip angle it opens and `SLIP_SCRUB` already charges for that — the plow is
+  a garnish, not a second brake pedal. `SLIP_SCRUB_FREE` (0.06 rad) makes
+  small slip free: that much is just what cornering looks like. Slip
+  *generation* (`SLIP_YAW_KEEP`/`SLIP_MAX`/`SLIP_THROTTLE_HOLD`/the friction
+  circle) is untouched — a deliberate power-drift still hangs 0.25 rad and
+  still costs 67 mph vs. straight, so the drift fest and its consequence
+  both survive. Don't "fix" the over-ask by lowering `maxYaw` to the grip
+  limit: the over-ask *is* the drift-entry mechanic.
+  Balance drift this caused (watch it): the AI drives smoothly and rarely
+  over-asks, so it was never paying much of this tax — the player gains more
+  than it does. Gap to a 4★ went 1.07→1.01 s (Model A stock), 2.03→2.69
+  (Deuce stock), 3.43→4.61 ('Cuda built); ordering intact, nothing inverted,
+  but **the boss is now slightly easier**. First knob if it's a walkover is
+  the planning grip in `ai.js` (`0.90 + 0.08 * skill`).
 - Wheel groups get both accumulated spin (`rotation.x += …`) and steer yaw
   (`rotation.y =`) on the same Euler, so `addWheels()` sets
   `rotation.order = "YXZ"` (yaw wraps spin). Don't remove it — the default

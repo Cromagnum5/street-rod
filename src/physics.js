@@ -23,6 +23,17 @@ const SLIP_RECOVER = 3.2;   // 1/s — how fast the tires bite the slide back in
 const SLIP_SQUEAL = 0.30;   // rad of slip that reads as a full-intensity squeal
 const SLIP_SCRUB = 0.35;    // /s per rad — hanging sideways bleeds speed (roasting tires isn't free)
 const SLIP_SCRUB_CAP = 0.20; // but never a wall: worst case 20%/s
+const SLIP_SCRUB_FREE = 0.06; // rad of slip that's just cornering, not drifting — costs nothing
+
+// Plow scrub: asking for more yaw than the tires can bend costs a little speed.
+// Deliberately small — digital keys mean a held steer always over-asks by 3-5x,
+// so this term fires during *ordinary cornering*, not just abuse. It used to run
+// 0.05/cap 0.10, which pinned at the cap and made steering a brake pedal (37-77%
+// of braking decel, worst on low-grip cars whose excess ratio is biggest). The
+// real consequence for over-driving is the slip angle it opens, which SLIP_SCRUB
+// already bills for; this is just the plow on top of it.
+const PLOW_SCRUB = 0.018;    // /s per unit of excess yaw demand
+const PLOW_SCRUB_CAP = 0.035; // worst case 3.5%/s
 
 // Friction circle: drive force and cornering share one tire budget, so a car
 // with power to spare can steer with the throttle — stab it mid-corner and
@@ -210,7 +221,7 @@ export class CarSim {
       const excess = Math.abs(yawRate) / velYawMax;
       velYaw = Math.sign(yawRate) * velYawMax;      // path bends at the grip cap
       yawRate = velYaw + (yawRate - velYaw) * SLIP_YAW_KEEP; // nose keeps going — loose
-      this.speed *= 1 - Math.min(0.10, (excess - 1) * 0.05) * dt; // gentle scrub
+      this.speed *= 1 - Math.min(PLOW_SCRUB_CAP, (excess - 1) * PLOW_SCRUB) * dt;
       slide = Math.max(slide, Math.min(1, (excess - 1) * 1.5 + 0.25));
     }
     this.heading += yawRate * dt;
@@ -221,8 +232,10 @@ export class CarSim {
     // lit: foot down holds the drift, lifting snaps the recovery to full
     this.slip -= this.slip * Math.min(1, SLIP_RECOVER * (1 - SLIP_THROTTLE_HOLD * powerEat) * dt);
     this.slip = Math.max(-SLIP_MAX, Math.min(SLIP_MAX, this.slip));
-    // sideways is slow: a held drift trades speed for the angle
-    this.speed *= 1 - Math.min(SLIP_SCRUB_CAP, Math.abs(this.slip) * SLIP_SCRUB) * dt;
+    // sideways is slow: a held drift trades speed for the angle. Small slip is
+    // just what cornering looks like, so it's free — only a real drift bills.
+    const drift = Math.max(0, Math.abs(this.slip) - SLIP_SCRUB_FREE);
+    this.speed *= 1 - Math.min(SLIP_SCRUB_CAP, drift * SLIP_SCRUB) * dt;
     slide = Math.max(slide, Math.min(1, Math.abs(this.slip) / SLIP_SQUEAL));
     if (this.offroad) slide *= 0.15;
     // squeal envelope: near-instant attack, short tail so chirps ring a touch
