@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { CAR_TIERS, PARTS, PART_KEYS, STREET_RACERS, RACER_COLORS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
 import { buildCar } from "./carmesh.js";
 import { Track, PALETTES, ROAD_HALF_W } from "./track.js";
-import { CarSim, effectiveStats, topSpeed, resolveContact, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
+import { CarSim, effectiveStats, topSpeed, resolveContact, resolveDraft, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
 import { AIDriver } from "./ai.js";
 import * as sfx from "./audio.js";
 
@@ -635,6 +635,8 @@ function raceTick(t, dt) {
     ai.rpm += ((IDLE_RPM + race.aiRev * 3600) - ai.rpm) * Math.min(1, dt * (race.aiRev ? 8 : 3.5));
     ai.throttleOut = race.aiRev;
   } else if (!race.over) {
+    // who's in whose wake — read by the drag term inside step()
+    resolveDraft(p, ai, dt);
     p.step(dt, thr, brk, steer);
     const ctrl = race.driver.drive(dt, race.time - race.goTime, p.trackDist, p);
     ai.step(dt, ctrl.throttle, ctrl.brake, ctrl.steer);
@@ -718,6 +720,10 @@ function raceTick(t, dt) {
   el("gear").textContent = race.countdown > 0 ? "N" : `GEAR ${p.gear}`;
   const rpmFrac = (p.rpm - IDLE_RPM) / (REDLINE - IDLE_RPM);
   tachoSegs.forEach((s, i) => s.classList.toggle("on", rpmFrac * 12 > i));
+  // the tow is invisible in the world, so the HUD is the only thing that tells
+  // you you've found it — it fades up as you slide into the tunnel
+  el("draft").style.opacity = p.draft > 0.08 ? String(Math.min(1, p.draft * 2.5)) : "0";
+  el("draftFill").style.width = `${Math.round(p.draft * 100)}%`;
   const ahead = p.trackDist >= ai.trackDist;
   el("position").textContent = race.countdown > 0 ? "" : ahead ? "1st" : "2nd";
   el("dotPlayer").style.left = `${Math.min(100, p.trackDist / race.track.length * 100)}%`;

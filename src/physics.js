@@ -51,6 +51,19 @@ const PLOW_SCRUB_CAP = 0.035; // worst case 3.5%/s
 export const POWER_GRIP_FLOOR = 0.40; // lateral share is never squeezed below this (AI imports it)
 const SLIP_THROTTLE_HOLD = 0.92; // how much of the slip recovery a lit throttle holds off
 
+// Slipstream: a car punches a hole in the air and the one behind rides it.
+// Modelled as a drag cut, so it's worth nothing at 30 mph and a lot at 150 —
+// drafting is a top-end move, and it can carry you *past* your own top speed,
+// which is the whole point: sit in the tow, then pull out and go by.
+// The tunnel starts behind the leader's tail (you can't draft from alongside)
+// and is about a car wide, so you have to actually line up in it.
+const DRAFT_LEN = 24;      // m behind the leader where the tow runs out
+const DRAFT_MIN = 3.5;     // m — closer than this you're on his bumper, not in his wake
+const DRAFT_HALF_W = 1.3;  // m of lateral offset that still sits in the clean tunnel
+const DRAFT_FADE_W = 2.0;  // m past that where the tow fades to nothing
+const DRAFT_MAX = 0.42;    // fraction of drag the wake deletes at its strongest
+const DRAFT_RISE = 3.5;    // 1/s — the tow builds and dies over a beat, never snaps
+
 // Steady-state cornering grip once body roll has set in — what the car can
 // actually hold mid-corner. Used by the AI's corner-speed planner too.
 export function suspensionGripFactor(softness) {
@@ -117,6 +130,7 @@ export class CarSim {
     this.bouncePending = 0; // rad of berm glance still to rotate in (heading only)
     this.contactLoss = 0;  // m/s shed to contact this frame (camera reads it;
                            // negative when contact *gave* the car speed)
+    this.draft = 0;        // 0..1 how deep in the other car's wake (resolveDraft writes)
 
     this.gear = 1;
     this.rpm = IDLE_RPM;
@@ -194,7 +208,9 @@ export class CarSim {
         force = tractionCap; // traction-limited launch
       }
     }
-    force -= st.drag * this.speed * this.speed;
+    // sitting in the leader's wake is a straight drag cut — so the tow is worth
+    // more the faster you're going, and deep in it you can outrun your own vmax
+    force -= st.drag * this.speed * this.speed * (1 - DRAFT_MAX * this.draft);
     force -= 0.18 * st.mass; // rolling resistance
     force -= st.mass * 9.8 * (this.grade / Math.hypot(1, this.grade)); // gravity along the slope (0 until hills)
     if (brake > 0) force -= brake * st.mass * 8;
@@ -329,6 +345,30 @@ export class CarSim {
     }
 
     if (this.trackDist >= this.track.length - 6) this.finished = true;
+  }
+}
+
+// Slipstream. Symmetric pair check — whoever is behind gets the tow, so the AI
+// drafts you back on the next straight if you leave the door open. The wake
+// trails the leader's *travel* direction, not his nose, so a car hanging
+// sideways in a drift drags his hole in the air sideways with him.
+export function resolveDraft(a, b, dt) {
+  const wake = (car, lead) => {
+    if (car.finished || lead.finished) return 0;
+    const dir = lead.heading - lead.slip;
+    const dx = car.x - lead.x, dz = car.z - lead.z;
+    const back = -(dx * Math.sin(dir) + dz * Math.cos(dir));      // m behind the leader
+    const side = Math.abs(dx * Math.cos(dir) - dz * Math.sin(dir)); // m off his line
+    if (back < DRAFT_MIN || back > DRAFT_LEN) return 0;
+    const along = 1 - (back - DRAFT_MIN) / (DRAFT_LEN - DRAFT_MIN); // strongest on his bumper
+    const lat = 1 - Math.max(0, side - DRAFT_HALF_W) / DRAFT_FADE_W;
+    return Math.max(0, along) * Math.max(0, Math.min(1, lat));
+  };
+  // eased both ways: dropping into the tow shouldn't step the speed (the camera
+  // reads acceleration, and a step in drag reads as an FOV pop — same lesson as
+  // the contact trade)
+  for (const [car, lead] of [[a, b], [b, a]]) {
+    car.draft += (wake(car, lead) - car.draft) * Math.min(1, dt * DRAFT_RISE);
   }
 }
 

@@ -232,6 +232,33 @@ sound is synthesized live with the Web Audio API.
   blown 4★ shows up on his card with a blower and the pips match the photo (the
   portrait cache key had to grow from tier+color to tier+color+build). Same
   spirit as "upgraded opponents sound built": now they look it.
+- **Drafting** (Jason's ask, 2026-07-12: "I want to be able to draft the car in
+  front of me and pick up speed"). `resolveDraft` in physics.js is a symmetric
+  pair check: whoever is behind gets `car.draft` 0..1, and `step` spends it as a
+  straight **drag cut** (`DRAFT_MAX` 42%), which is the load-bearing choice —
+  drag is the only force that goes as v², so the tow is worth nothing at 30 mph
+  and everything at 150. That also means it can carry you **past your own
+  vmax**, which is the entire move: sit in it, then pull out and go by. Measured
+  on the bumper (5 m): Model A 74.5 → 85.8 mph, Bel Air 123 → 138.8, maxed 'Cuda
+  277 → 320 — about +15% top speed at every tier, so it never becomes a
+  low-tier-only crutch or a high-tier-only toy.
+  The tunnel starts *behind the leader's tail* (`DRAFT_MIN` 3.5 m — you cannot
+  draft from alongside), runs out by `DRAFT_LEN` 24 m, and is about a car wide
+  (`DRAFT_HALF_W` 1.3, fading to nothing 2 m further out), so you have to line up
+  in it: at 8 m back the gain is +9.1 mph on his line, +5.5 one metre off it,
+  +1.1 at three. It trails his **travel** direction, not his nose, so a car
+  hanging sideways in a drift drags its hole in the air sideways too. `DRAFT_RISE`
+  eases the tow in and out over ~0.3 s — a stepped drag change would pop the FOV,
+  same lesson as the contact trade.
+  Balance is untouched because drafting is **opt-in**: 16-seed A/B with a
+  flat-out human proxy (which doesn't chase the tow) moved the margin over the AI
+  by ≤0.4 s, and only in the races where the cars are close enough to use it.
+  The AI gets the tow too — it's a pair function, and a trailing AI on your
+  bumper is real — but it has **no draft-seeking logic**: it drives its racing
+  line and takes the tow when the line happens to put it there. If it should
+  ever hunt the wake, that's `AIDriver`, not physics. The HUD `#draft` readout
+  exists because the wake is invisible: the tow is the one speed source with no
+  on-screen cause, so without it a player just sees the speedo climb.
 - Camera drama comes from **acceleration, not speed**: framing follows the
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big

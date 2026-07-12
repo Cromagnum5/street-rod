@@ -46,6 +46,15 @@
     letter-spacing: 1px; border: 1px solid var(--rule-strong); padding: 4px 9px;
     background: rgba(0, 0, 0, 0.75);
   }
+  /* Slipstream tell: you feel the tow in the speedo, but you can't see the hole
+     in the air — this says you're in it and how deep. Fades with the draft. */
+  #draft {
+    position: absolute; right: 24px; bottom: 152px; display: flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: 2px; padding: 4px 9px;
+    background: rgba(0, 0, 0, 0.75); border: 1px solid var(--rule-strong); opacity: 0;
+  }
+  #draftBar { width: 54px; height: 6px; border: 1px solid var(--rule); }
+  #draftFill { display: block; height: 100%; background: var(--ink); }
   #tacho {
     position: absolute; left: 24px; bottom: 24px; width: 220px; height: 16px;
     border: 1px solid var(--rule-strong); background: #000; display: flex; gap: 2px; padding: 2px;
@@ -194,6 +203,7 @@
   <div id="progress"><div class="dot" id="dotAI"></div><div class="dot" id="dotPlayer"></div></div>
   <div id="tacho"></div>
   <div id="gear"></div>
+  <div id="draft"><span>DRAFT</span><div id="draftBar"><i id="draftFill"></i></div></div>
   <div class="speedo"><div id="speed">0</div><div id="speedUnit">MPH</div></div>
   <div id="centerMsg"></div>
 </div>
