@@ -366,11 +366,19 @@ function carPortrait(tierIdx, color) {
 function cardHTML(opp) {
   const stars = Math.max(1, Math.round(opp.skill * 5));
   const carName = CAR_TIERS[opp.carTier].name;
+  const build = aiParts(opp);
+  const buildRows = PART_KEYS.map((k) => {
+    const lvl = build[k] ?? 0;
+    const boxes = [0, 1, 2].map((j) =>
+      `<span class="${j < lvl ? "" : "off"}">&#9632;</span>`).join("");
+    return `<div class="bRow"><span class="bName">${PARTS[k].label}</span><span class="pips">${boxes}</span></div>`;
+  }).join("");
   return `
     <div class="oppName">${opp.name}</div>
     <div class="oppCar">${carName}</div>
     <div class="oppPhoto"><img src="${carPortrait(opp.carTier, opp.carColor)}" alt="${carName}"></div>
     <div class="oppFlavor">&ldquo;${opp.flavor}&rdquo;</div>
+    <div class="oppBuild">${buildRows}</div>
     <div class="oppStats">
       <div>SKILL <span class="stars"><span class="lit">${"&#9733;".repeat(stars)}</span>${"&#9734;".repeat(5 - stars)}</span></div>
       ${opp.boss
@@ -446,6 +454,8 @@ function aiParts(opp) {
   // term floors at 0 and the per-part jitter floors at the deficit, so even
   // a 1★ in lesser iron shows up upgraded to the player-tier stock pace —
   // never a free win just because the draw handed them an older car.
+  // Memoized: the card shows this build, so it has to be the one that races.
+  if (opp.parts) return opp.parts;
   const deficit = opp.freebie ? 0 : player.carTier - opp.carTier;
   const lvl = opp.boss
     ? Math.min(3, 1 + Math.round(opp.skill))
@@ -458,6 +468,7 @@ function aiParts(opp) {
     const k = PART_KEYS[Math.floor(Math.random() * PART_KEYS.length)];
     p[k] = Math.min(3, p[k] + 1);
   }
+  opp.parts = p;
   return p;
 }
 
