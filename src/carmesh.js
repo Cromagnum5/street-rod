@@ -269,6 +269,17 @@ function buildPrewar(paint, accentMat, viz) {
     rocker: { x: 0.62, y: 0.6, z: -0.05, len: 1.5, r: 0.06 },
   });
 
+  // STANCE: the prewar body can barely come down at all, and the exposed rear end
+  // is why. The diff ball (root, top y=0.58) already sits flush against the trunk
+  // floor (y=0.575) — that flush fit is the whole point of the raised trunk, so
+  // any straight drop swallows the axle Jason wanted showing. Way out: lean on
+  // RAKE instead. Nose-down rake pivots the body about the ground line at z=0, so
+  // the tail RISES (+1.175·rake at the trunk's nearest corner) even as the nose
+  // comes down — a hot rod in the weeds, and the diff gets *more* daylight, not
+  // less. The drop is then only allowed to spend what the rake bought:
+  //   drop ≤ 1.175·rake − 0.005, i.e. 0.024 ≤ 0.030 at level 3. Keep that true.
+  spec.stance = { drop: 0.008, rake: 0.010 };
+
   spec.length = 4.0;
   return { g, spec };
 }
@@ -340,6 +351,10 @@ function buildFifties(paint, accentMat, fins, viz) {
     rocker: { x: 0.96, y: 0.3, z: 0, len: 2.1, r: 0.065 },
   });
 
+  // nothing exposed under this one, so it can genuinely slam: 0.075 of drop
+  // leaves the rockers 0.16 off the deck
+  spec.stance = { drop: 0.025, rake: 0.004 };
+
   spec.length = 4.9;
   return { g, spec };
 }
@@ -407,6 +422,8 @@ function buildMuscle(paint, accentMat, viz) {
     rocker: { x: 1.0, y: 0.32, z: 0.02, len: 1.95, r: 0.07 },
   });
 
+  spec.stance = { drop: 0.025, rake: 0.004 }; // on top of the era's built-in rake
+
   spec.length = 4.8;
   spec.rearWheelR = 0.42; // fat rears
   return { g, spec };
@@ -417,6 +434,16 @@ function buildMuscle(paint, accentMat, viz) {
 // Engine and gearbox live inside the body; they stay an audio/stat reward.
 const lvl = (parts, key) => Math.max(0, Math.min(3, parts?.[key] ?? 0));
 
+// Suspension = stance. Sagging leaf springs sit at stock height; each level
+// drops the sprung body onto the wheels and adds a touch of nose-down rake.
+// Both are per-level increments, era-scaled (spec.stance) because the eras have
+// wildly different things underneath them to hit — see buildPrewar.
+function applyStance(body, spec, level, baseRake) {
+  const st = spec.stance;
+  body.position.y = -st.drop * level;
+  return baseRake + st.rake * level;
+}
+
 export function buildCar(tier, opts = {}) {
   const paint = new THREE.MeshPhongMaterial({
     color: opts.color ?? tier.color, shininess: 60, specular: 0x666666,
@@ -426,6 +453,7 @@ export function buildCar(tier, opts = {}) {
     induction: lvl(opts.parts, "induction"),
     exhaust: lvl(opts.parts, "exhaust"),
     tires: lvl(opts.parts, "tires"),
+    suspension: lvl(opts.parts, "suspension"),
   };
 
   let built;
@@ -458,12 +486,13 @@ export function buildCar(tier, opts = {}) {
     beam.position.set(0, spec.wheelR, spec.wheelBase / 2);
     root.add(beam);
   }
-  // muscle cars get taller rears (addWheels builds them that way) and a nose-down rake
-  let rake = 0;
-  if (spec.rearWheelR) {
-    rake = 0.015;
-    body.rotation.x = rake;
-  }
+  // muscle cars get taller rears (addWheels builds them that way) and a nose-down
+  // rake; suspension parts drop the body onto the wheels and rake it further.
+  // Only the sprung body moves — the wheels (and the prewar axles) stay planted,
+  // which is also why the drop can't just be dialed up: see buildPrewar's stance.
+  let rake = spec.rearWheelR ? 0.015 : 0;
+  rake = applyStance(body, spec, viz.suspension, rake);
+  body.rotation.x = rake;
 
   root.userData.body = body;
   root.userData.bodyRake = rake;

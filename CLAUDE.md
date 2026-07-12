@@ -176,8 +176,8 @@ sound is synthesized live with the Web Audio API.
   parts, 66.8 s) now loses to the 4–5★ challengers — the crown's money sink
   is the point. The mercy freebie is exempt (no `crown` flag on Freddy).
 - Upgrades you can **see** (Jason's call, 2026-07-12: "reward the player for
-  upgrading parts on each model"). Three of the six parts hang outside the body,
-  so those three change the mesh and the other three honestly don't:
+  upgrading parts on each model"). Four of the six parts show on the car; the
+  other two honestly don't:
   **induction** — stock is a flat hood (this *took away* the muscle cars' free
   hood scoop; you earn it now), then a cut with velocity stacks, then a
   body-colored half-round turbo bulge sunk to its axle in the hood, then the
@@ -188,9 +188,21 @@ sound is synthesized live with the Web Audio API.
   move them to the rockers. **tires** — skinny whitewall pizza cutters to fat
   blackwall slicks with a big mag face, rears growing faster than fronts for
   drag stagger (width only; radius is what the body sits on and what
-  `userData.wheelR` spins). **engine/gearbox/suspension change nothing** —
-  a motor under a hood and a box inside the car have nowhere to show, and
-  faking it would be noise. Keep that honesty; the audio already carries engine.
+  `userData.wheelR` spins). **suspension** — stance: `applyStance` drops the
+  sprung body onto the wheels and adds nose-down rake, per-level, era-scaled by
+  `spec.stance`. Stance rake folds into `userData.bodyRake` (raceTick overwrites
+  `body.rotation.x` every frame with `bodyRake + sim.pitch`, so it has to live
+  there, not on the mesh); the drop rides `body.position.y`, which nothing
+  per-frame touches. **engine and gearbox change nothing** — a motor under a
+  hood and a box inside the car have nowhere to show, and faking it would be
+  noise. Keep that honesty; the audio already carries engine.
+  Prewar stance is the constrained one and the constraint is instructive: the
+  diff ball (unsprung, on the root) already sits flush under the trunk floor,
+  and that flush fit is the *point* of the raised trunk, so any straight drop
+  swallows the exposed axle. The way out is that nose-down rake pivots the body
+  about the ground line at z=0 — the tail RISES as the nose falls, so rake buys
+  headroom over the diff and the drop then spends it: keep
+  `drop ≤ 1.175·rake − 0.005` (0.024 vs 0.030 at level 3). Check 4 asserts it.
   Load-bearing consequences: buying a part rebuilds the garage turntable car
   (`refreshGarageCar` in main.js) — seeing it appear the moment you pay *is* the
   feature. Opponent card portraits render the AI's real `aiParts()` build, so a
@@ -437,10 +449,21 @@ that class objectively and in seconds; run both before trusting a car render:
    real gap. Added 2026-07-12 after the side pipes speared the wheels on every
    fifties and muscle car — see the tire-diameter gotcha for why the hand
    arithmetic said they cleared.
-All three now **sweep part levels**, not just the 7 tiers: every visible part is
-a fresh chance to bolt a box to nothing or bury it in its neighbour. 168 builds
-(7 cars × 3 visible categories × 4 levels, off both a stock and a maxed base)
-still runs in seconds. Re-run all three after *any* mesh edit: moving one box
+4. **Stance** — lowering the sprung body drives it down onto things that do NOT
+   move with it (the wheels; on prewar, the exposed axle + diff). Three limits,
+   swept over tier × tire level × suspension level: ground clearance ≥ 0.10 m,
+   rear-axle burial ≤ 0.02 m (it measures 0.005, the untouched stock baseline —
+   if that number ever climbs, a drop is eating the hot-rod axle), and each tire
+   still ≥ 0.02 m proud of the body's flank so the car never looks wheel-less.
+   Two traps when writing this kind of check, both of which I hit: the **body is
+   itself a root child**, so "everything on the root that isn't a wheel" measures
+   the body against itself; and the prewar **front beam is meant to be buried**
+   in the hood (it's 1.55 wide against a 1.05 hood, so its visible ends always
+   clear) — assert on the rear group only.
+All four now **sweep part levels**, not just the 7 tiers: every visible part is
+a fresh chance to bolt a box to nothing or bury it in its neighbour. 224 builds
+(7 cars × 4 visible categories × 4 levels, off both a stock and a maxed base)
+still runs in seconds. Re-run all four after *any* mesh edit: moving one box
 out from under another is exactly how these bugs get introduced.
 
 For physics/balance questions, skip the browser: bundle a Node script that
