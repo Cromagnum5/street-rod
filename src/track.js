@@ -6,6 +6,16 @@ import * as THREE from "three";
 
 export const ROAD_HALF_W = 7.5;
 const STEP = 5; // metres between centerline samples
+const PRE = 400, POST = 900; // visual road extensions (see buildMeshes)
+// Self-clearance: elevation is a function of distance-along-track, so if the
+// centerline loops back near itself the two passes sit at different heights
+// and the lower road runs through the upper pass's terrain skirt (skirts
+// reach ±100 m → any pair of passes needs 210 m). Pairs closer than SELF_ARC
+// along the road are one continuous sweeper, not two passes (min turn radius
+// is ~111 m, so a half-circle keeps ~222 m and passes; only a >230° carousel
+// would flag itself, and rerolling those is fine too).
+const SELF_CLEAR = 210;
+const SELF_ARC = 350;
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -17,64 +27,113 @@ function mulberry32(seed) {
   };
 }
 
+// One centerline candidate: the heading/hill random walks for one sub-seed.
+function generate(lengthM, seed) {
+  const rand = mulberry32(seed);
+  const points = [];   // THREE.Vector3 per sample
+  const headings = []; // heading at each sample
+
+  // Random-walk curvature: alternating straights and sweepers, never sharp.
+  let x = 0, z = 0, heading = 0, curv = 0, curvTarget = 0, segLeft = 0;
+  const n = Math.ceil(lengthM / STEP) + 1;
+  for (let i = 0; i < n; i++) {
+    points.push(new THREE.Vector3(x, 0, z));
+    headings.push(heading);
+    if (segLeft <= 0) {
+      segLeft = 120 + rand() * 260; // segment length in metres
+      curvTarget = i * STEP < 200 ? 0 : (rand() - 0.5) * 2 * 0.009; // gentle; straight launch zone
+      if (rand() < 0.35) curvTarget = 0; // straights are common
+    }
+    curv += (curvTarget - curv) * 0.06;
+    heading += curv * STEP;
+    x += Math.sin(heading) * STEP;
+    z += Math.cos(heading) * STEP;
+    segLeft -= STEP;
+  }
+
+  // Gentle rolling hills: a second random walk drives slope the way the
+  // one above drives heading. A soft spring toward mid-height turns the
+  // walk into an underdamped oscillator (~500 m wavelength), and elevation
+  // stays in [0, HILL_MAX] so the flat ground plane never shows above the
+  // road. An envelope pins the launch zone and the finish approach to
+  // y = 0 — launch balance stays flat-road, and finished cars coasting
+  // past the line keep a level y/grade (see physics.js).
+  const HILL_MAX = 6;
+  const sm01 = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+  let ey = 0, slope = 0, slopeTarget = 0, hillLeft = 0;
+  for (let i = 0; i < n; i++) {
+    if (hillLeft <= 0) {
+      hillLeft = 140 + rand() * 300;
+      slopeTarget = (rand() - 0.5) * 2 * 0.04; // ≤4% grade wanted; gentle
+      if (rand() < 0.25) slopeTarget = 0;
+    }
+    slope += ((slopeTarget - (ey - HILL_MAX / 2) * 0.012) - slope) * 0.05;
+    ey += slope * STEP;
+    if (ey < 0) { ey = 0; slope = Math.max(slope, 0); }
+    if (ey > HILL_MAX) { ey = HILL_MAX; slope = Math.min(slope, 0); }
+    hillLeft -= STEP;
+    const d = i * STEP;
+    points[i].y = ey * sm01((d - 150) / 300) * sm01((lengthM - d - 80) / 300);
+  }
+  // round off the clamp/envelope kinks so grade (piecewise per segment)
+  // never steps visibly in groundPitch
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 1; i < n - 1; i++) {
+      points[i].y = (points[i - 1].y + 2 * points[i].y + points[i + 1].y) / 4;
+    }
+  }
+
+  return { points, headings, rand, clear: selfClearance(points, headings) };
+}
+
+// Min plan distance between any two far-apart centerline samples, the PRE/POST
+// straight extensions included (the run-off crossing a mid-track hill is the
+// same drive-through-terrain artifact, and the results camera lingers on it).
+// Early-outs at the first pair under SELF_CLEAR — the returned value is then
+// just an upper bound, which is fine for ranking failed candidates.
+function selfClearance(points, headings) {
+  const xs = [], zs = [];
+  const first = points[0], last = points[points.length - 1];
+  const h0 = headings[0], h1 = headings[headings.length - 1];
+  for (let i = Math.round(PRE / STEP); i >= 1; i--) {
+    xs.push(first.x - Math.sin(h0) * STEP * i); zs.push(first.z - Math.cos(h0) * STEP * i);
+  }
+  for (const p of points) { xs.push(p.x); zs.push(p.z); }
+  for (let i = 1; i <= Math.round(POST / STEP); i++) {
+    xs.push(last.x + Math.sin(h1) * STEP * i); zs.push(last.z + Math.cos(h1) * STEP * i);
+  }
+  const skip = Math.round(SELF_ARC / STEP);
+  let best = Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    for (let j = i + skip; j < xs.length; j++) {
+      const dx = xs[i] - xs[j], dz = zs[i] - zs[j];
+      const d2 = dx * dx + dz * dz;
+      if (d2 < best) {
+        best = d2;
+        if (best < SELF_CLEAR * SELF_CLEAR) return Math.sqrt(best);
+      }
+    }
+  }
+  return Math.sqrt(best);
+}
+
 export class Track {
   constructor(lengthM, seed) {
-    const rand = mulberry32(seed);
     this.length = lengthM;
-    this.points = [];   // THREE.Vector3 per sample
-    this.headings = []; // heading at each sample
-
-    // Random-walk curvature: alternating straights and sweepers, never sharp.
-    let x = 0, z = 0, heading = 0, curv = 0, curvTarget = 0, segLeft = 0;
-    const n = Math.ceil(lengthM / STEP) + 1;
-    for (let i = 0; i < n; i++) {
-      this.points.push(new THREE.Vector3(x, 0, z));
-      this.headings.push(heading);
-      if (segLeft <= 0) {
-        segLeft = 120 + rand() * 260; // segment length in metres
-        curvTarget = i * STEP < 200 ? 0 : (rand() - 0.5) * 2 * 0.009; // gentle; straight launch zone
-        if (rand() < 0.35) curvTarget = 0; // straights are common
-      }
-      curv += (curvTarget - curv) * 0.06;
-      heading += curv * STEP;
-      x += Math.sin(heading) * STEP;
-      z += Math.cos(heading) * STEP;
-      segLeft -= STEP;
+    // The heading walk is free to loop back across itself — measured over
+    // 1000 seeds, 45% of tracks had terrain-skirt overlap and 39% crossed
+    // their own road (flat, that passed as an X-intersection; with hills
+    // it's driving through the upper pass's hillside). Reroll the walk on a
+    // derived sub-seed until it keeps SELF_CLEAR; ~55% of raw seeds pass,
+    // so this converges in ~2 tries. Deterministic per (length, seed).
+    let best = null;
+    for (let attempt = 0; attempt < 24 && (!best || best.clear < SELF_CLEAR); attempt++) {
+      const cand = generate(lengthM, (seed + attempt * 0x9e3779b9) >>> 0);
+      if (!best || cand.clear > best.clear) best = cand;
     }
-
-    // Gentle rolling hills: a second random walk drives slope the way the
-    // one above drives heading. A soft spring toward mid-height turns the
-    // walk into an underdamped oscillator (~500 m wavelength), and elevation
-    // stays in [0, HILL_MAX] so the flat ground plane never shows above the
-    // road. An envelope pins the launch zone and the finish approach to
-    // y = 0 — launch balance stays flat-road, and finished cars coasting
-    // past the line keep a level y/grade (see physics.js).
-    const HILL_MAX = 6;
-    const sm01 = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
-    let ey = 0, slope = 0, slopeTarget = 0, hillLeft = 0;
-    for (let i = 0; i < n; i++) {
-      if (hillLeft <= 0) {
-        hillLeft = 140 + rand() * 300;
-        slopeTarget = (rand() - 0.5) * 2 * 0.04; // ≤4% grade wanted; gentle
-        if (rand() < 0.25) slopeTarget = 0;
-      }
-      slope += ((slopeTarget - (ey - HILL_MAX / 2) * 0.012) - slope) * 0.05;
-      ey += slope * STEP;
-      if (ey < 0) { ey = 0; slope = Math.max(slope, 0); }
-      if (ey > HILL_MAX) { ey = HILL_MAX; slope = Math.min(slope, 0); }
-      hillLeft -= STEP;
-      const d = i * STEP;
-      this.points[i].y = ey * sm01((d - 150) / 300) * sm01((lengthM - d - 80) / 300);
-    }
-    // round off the clamp/envelope kinks so grade (piecewise per segment)
-    // never steps visibly in groundPitch
-    for (let pass = 0; pass < 3; pass++) {
-      for (let i = 1; i < n - 1; i++) {
-        this.points[i].y = (this.points[i - 1].y + 2 * this.points[i].y + this.points[i + 1].y) / 4;
-      }
-    }
-
-    this._rand = rand;
+    this.points = best.points;
+    this.headings = best.headings;
+    this._rand = best.rand;
   }
 
   // Position/heading at distance d along the track. `elev` is the road height
@@ -141,8 +200,8 @@ export class Track {
     // and everything physics/AI touch still see [0, length].
     // POST is long because raceTick keeps coasting the cars behind the
     // results overlay (brake 0.3 ≈ 2.4 m/s² — a top-tier car can roll
-    // ~700 m before it's crawling), and fog swallows the far end anyway
-    const PRE = 400, POST = 900;
+    // ~700 m before it's crawling), and fog swallows the far end anyway.
+    // PRE/POST are module consts — the self-clearance reroll needs them too.
     const pts = [], hd = [];
     const first = this.points[0], last = this.points[this.points.length - 1];
     const h0 = this.headings[0], h1 = this.headings[this.headings.length - 1];

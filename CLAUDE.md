@@ -59,7 +59,17 @@ sound is synthesized live with the Web Audio API.
   passes so per-segment grade never steps visibly in `groundPitch`.
   Elevation is deliberately a function of centerline distance only (ribbon
   world: nearby off-road shares the road height) so `project`/`curvatureAt`
-  stay plan-view math forever. `CarSim` rides the surface
+  stay plan-view math forever. Corollary (fixed 2026-07-11 after Jason hit
+  it): the walk must never loop back near itself, or the two passes sit at
+  different heights and the lower road runs through the upper hillside —
+  the constructor rerolls the walk on derived sub-seeds until all far-apart
+  sample pairs (visual run-up/run-off included) keep `SELF_CLEAR` 210 m
+  plan distance (each pass's skirt reaches ±100 m). ~55% of raw seeds pass,
+  so it converges in ~2 tries (worst measured 21 ms, once at race start);
+  already-clean seeds reproduce unchanged (attempt 0 = the original
+  stream). Pre-fix, 39% of seeds had the road *crossing itself* — flat,
+  that camouflaged as an X-intersection; hills exposed it. `CarSim` rides
+  the surface
   (`y`/`grade`/`groundPitch`, no vertical velocity — no jumps by design),
   race-mesh roots take ground pitch (their `rotation.order` is `"YXZ"` for
   the same reason as wheels), the camera height rides `race.camY`, a
