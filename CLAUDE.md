@@ -47,6 +47,28 @@ sound is synthesized live with the Web Audio API.
   axle go on the **root** group, not the body, so they stay level with
   the wheels. The prewar trunk is deliberately raised (bottom y≈0.58) —
   lower it and it swallows the axle, which sits at wheel-center height.
+  A gap-hunting pass landed 2026-07-12 (Jason: "weird gaps in the car"),
+  and the bugs it found are all the same shape — **a box or wedge whose
+  neighbour ran out from under it**, so mind these when moving anything:
+  every era's cabin is now paint + glass, not a solid paint brick, and each
+  greenhouse needs a belt slab under it that spans the *whole* cabin (the
+  muscle car's stopped short, so the windshield foot, the fastback and the
+  spoiler all hung over open air, and its cabin had no sides at all — you
+  could see straight through the car broadside). Two rules that keep
+  recurring: **a part must stand proud of the surface it sits on or that
+  surface eats it** (the muscle headlights were behind the grille's front
+  face; the prewar headlight bar was chrome-on-chrome inside the radiator
+  shell), and **the roof must overhang its windshield's top edge** — stop it
+  short and the wedge's vertical back face pokes out ahead of it, which
+  reads as a redundant second pane of glass with a slot in front of the roof
+  (Jason caught this on the 'Cuda; an angled pane never needs a vertical one
+  behind it). Also: `wedge()`'s `flip` puts the tall face at −z, so a
+  tailfin wants `flip=false` — the Bel Air's fins were built backwards
+  (tall at the cabin, tapering to nothing at the tail) with their lamps
+  floating in open air 0.07 m *behind* the body. Fins are now low accent
+  trim, not wings, and all fifties brake lights live on the tail panel
+  (Jason's call). Cross-check a mesh edit with dead-side + rear-3/4 + a
+  *low* front-3/4 — the low angle is what exposes floating parts.
 - `src/track.js` — seeded random-walk centerline (`mulberry32`), road ribbon
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
