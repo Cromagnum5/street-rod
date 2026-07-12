@@ -72,13 +72,17 @@ function generate(lengthM, seed) {
   // road. An envelope pins the launch zone and the finish approach to
   // y = 0 — launch balance stays flat-road, and finished cars coasting
   // past the line keep a level y/grade (see physics.js).
-  const HILL_MAX = 6;
+  // HILL_MAX, the slope target and the spring's mid-height are all in the same
+  // units, so scaling them together scales the profile in y and leaves the
+  // wavelength alone — that's the knob for "taller hills" (6 -> 6.9 = +15%,
+  // 2026-07-12).
+  const HILL_MAX = 6.9;
   const sm01 = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
   let ey = 0, slope = 0, slopeTarget = 0, hillLeft = 0;
   for (let i = 0; i < n; i++) {
     if (hillLeft <= 0) {
       hillLeft = 140 + rand() * 300;
-      slopeTarget = (rand() - 0.5) * 2 * 0.04; // ≤4% grade wanted; gentle
+      slopeTarget = (rand() - 0.5) * 2 * 0.046; // ≤4.6% grade wanted; still gentle
       if (rand() < 0.25) slopeTarget = 0;
     }
     slope += ((slopeTarget - (ey - HILL_MAX / 2) * 0.012) - slope) * 0.05;

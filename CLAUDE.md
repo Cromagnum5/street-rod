@@ -80,11 +80,20 @@ sound is synthesized live with the Web Audio API.
   hint)`, `racingOffset(d)` (the racing line — see the line entry in Design
   intent; lazily built once per track, ~2 ms). `sample` also returns `elev`/`grade` — gentle rolling hills landed
   2026-07-11: a slope random walk with a soft spring toward mid-height
-  (underdamped, ~500 m wavelength), elevation confined to [0, 6 m] so the
-  flat ground plane never shows above the road, grades ≲4%, a smoothstep
+  (underdamped, ~500 m wavelength), elevation confined to [0, HILL_MAX] so the
+  flat ground plane never shows above the road, grades ≲4.6%, a smoothstep
   envelope pinning the launch zone and finish approach to y = 0 (launch
   balance stays flat-road; finished cars coast level), and 3 smoothing
   passes so per-segment grade never steps visibly in `groundPitch`.
+  Hill *height* is one knob, not three: `HILL_MAX`, the slope target and the
+  spring's mid-height share units, so scaling them together stretches the
+  profile in y and leaves the wavelength alone — same number of crests, each
+  taller (Jason asked for +15% on 2026-07-12: 6 → 6.9 m, 4% → 4.6%, which
+  measured +15.0% on mean elevation, mean crest and mean grade alike over 24
+  seeds). Scaling the slope target *alone* would buy steeper hills, not taller
+  ones. The heading walk runs before the hill walk on the same `rand()` stream
+  and self-clearance is plan-view, so retuning heights leaves every seed's road
+  layout bit-identical.
   Elevation is deliberately a function of centerline distance only (ribbon
   world: nearby off-road shares the road height) so `project`/`curvatureAt`
   stay plan-view math forever. Corollary (fixed 2026-07-11 after Jason hit
