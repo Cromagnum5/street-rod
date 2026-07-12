@@ -173,25 +173,41 @@ sound is synthesized live with the Web Audio API.
   `tapPeriod`/`pedalPeriod` (skill-scaled tap cadence), `minHold`, the 0.85
   hold-solid and 0.12 re-press deadband thresholds. The AI's front-wheel
   visuals follow `race.aiSteer` in main.js — don't hardcode them straight.
-- AI throttle & braking (Jason playtested + approved 2026-07-11, "much
-  improved"): straights are flat-out for **every** skill — the straight
-  target sits above `vmax` (asymptotic, so the pedal band never engages)
-  and the old low-skill target discount + throttle-breathe sine are gone;
-  skill expresses only in corners. Corner planning grip is
-  `0.86 + 0.12 * skill` (skill 1.0 stays at the historical 0.98 — that ~2%
-  margin is what the friction-circle 0.95 anticipation is tuned against).
-  Braking is late, not lookahead-coast: scan the full braking distance,
-  compute the decel each corner demands (`(v² − vc²)/2d`), and only brake
-  past a skill-scaled comfort threshold (`4.0 + 3.2*skill` m/s², lift and
-  coast above 0.7× of it, brake sized `/7` not `/8` to arrive a hair
-  under). Boss races were also shortened to match the longest street race
-  at the tier (`2700 + tier*200` in main.js) — a pink-slip race shouldn't
-  outlast the money races. Net effect (16-seed sim, rubber band off):
-  every tier faster than the pre-2026-07-11 baseline (1–2★ 85.0→79.3 s;
-  boss ~5%/km faster with offroad 10.2→0.19 s/race in that harness).
-  Balance watch: the boss no longer throws away seconds offroad — if a
-  near-maxed car can't beat it anymore, the planning-grip line above is
-  the first knob.
+- AI throttle & braking (Jason playtested + approved 2026-07-12, "much
+  better"): **the foot is down by default, everywhere** — straights *and*
+  corners. Only two things lift it: the brakes, and a 55% ease when the car
+  is genuinely carrying too much into the turn (`speed > targetSpeed + 2`).
+  Skill expresses in how early it brakes and how close to the limit it
+  plans, never in a lifted throttle. Corner planning grip is
+  `0.90 + 0.08 * skill` (skill 1.0 still lands on the historical 0.98).
+  Braking is late: scan the full braking distance, compute the decel each
+  corner demands (`(v² − vc²)/2d`), and only brake past a skill-scaled
+  comfort threshold (`4.0 + 3.2*skill` m/s², brake sized `/7` not `/8` to
+  arrive a hair under). Boss races are shortened to match the longest street
+  race at the tier (`2700 + tier*200` in main.js) — a pink-slip race
+  shouldn't outlast the money races.
+  What this replaced (Jason, 2026-07-12: "I am faster in the turn than the
+  AI at all opponent levels, and none seem aggressive on the throttle in a
+  turn") — two things, both scaling with grip, so the deficit was *worst*
+  at the low levels:
+  1. a corner **cruise band** that idled at 55% duty once the planned corner
+     speed was reached, plus a **lift-and-coast** branch that shut the
+     throttle whenever a corner in braking range demanded >0.7× comfort
+     decel. Between them the AI arrived at every turn already slow: it held
+     **0.53 of its own grip limit** mid-corner where a flat-out driver in
+     the same car held 0.62 and won by 3.2 s.
+  2. the friction-circle budget *interpolating* toward a lift instead of
+     solving the circle (see the power-drifting entry below).
+  The rubber band now scales the **planning grip** (squared — speed goes as
+  √grip), not the speed target. Load-bearing: with the throttle flat-out by
+  default, a target-only band can only slow a *leading* AI, it can never
+  help a trailing one. Don't move it back onto `targetSpeed`.
+  Net (16-seed sim, corner throttle duty / race gap to a flat-out human in
+  the identical car): 1–2★ 0.80→0.91 duty, 3.16→1.99 s; 3★ 0.78→0.89,
+  2.39→1.29 s; 4★ 0.72→0.86, 1.87→0.86 s; boss 0.67→0.82, 1.52→0.54 s.
+  Every tier ~1.1–1.2 s faster per race, offroad stays 0.00 s, star ordering
+  intact. Balance watch: the boss took the same ~1.1 s — if a near-maxed car
+  can't beat it anymore, the planning-grip line above is the first knob.
 - AI launch (Jason's call, 2026-07-10, `a61b180`): the AI holds full
   throttle from the green — the skill-scaled `reaction` delay in `ai.js`
   gates only the steering/corner-planning brain, never the launch (it used
@@ -227,16 +243,23 @@ sound is synthesized live with the Web Audio API.
   2026-07-11 and left open, not declined). Braking is exempt from the
   circle: trail-braking always grips. Full-squeal intensity is
   `SLIP_SQUEAL` (0.30 rad), not `SLIP_MAX`. The AI got matching
-  friction-circle awareness in `ai.js`: it budgets corner-throttle duty by
-  `(0.95 - realLoad) / (1 - shareOn)` — realLoad measured against the
-  car's *physical* `cornerGrip` (not the skill-discounted planning grip,
-  which made street racers lift inside genuine margin and cost them ~2
-  s/race), shareOn floored at the imported `POWER_GRIP_FLOOR`, and the
-  0.95 is anticipation the ~2%-margin boss needs. 16-seed sim: tier-6 boss
-  offroad 3.14→2.71 s/race (improved again — lift-and-coast tightens its
-  line), boss ~2 s slower overall (acceptable, watch it), street racers
-  bit-identical pace, AI slip peaks ≤0.03 rad (opponents never drift by
-  accident).
+  friction-circle awareness in `ai.js`, and 2026-07-12 it started **solving**
+  the circle instead of interpolating toward a lift: at a lateral load of
+  `realLoad` the tires still have `√(1 − realLoad²)` of drive budget, so
+  that — over `instLoad`, the load a pinned pedal would ask for — is the
+  throttle cap. realLoad is measured against the car's *physical*
+  `cornerGrip`, never the skill-discounted planning grip (that made street
+  racers lift inside genuine margin and cost them ~2 s/race); the 0.97
+  divisor is a hair of anticipation; the drive room is floored at the
+  imported `POWER_GRIP_FLOOR`, below which physics won't squeeze the lateral
+  share anyway, so a near-stock car simply keeps its foot in it. The old
+  form (`(0.95 − realLoad) / (1 − shareOn)`) was a lift dressed up as a
+  budget and was half of why the AI crawled through corners.
+  Consequence, and it's the intended one: **opponents now power-slide.** In
+  a real race the AI runs ~0.95 corner throttle and peaks around 0.24 rad of
+  slip — the old note here claimed "AI slip peaks ≤0.03 rad, opponents never
+  drift by accident", and that is no longer true by design. They drift on
+  purpose now, same as you do.
 - `SkidSound` gains are deliberately ≫1 (0.35+2.0x sing, 0.8 scrub): its
   Q=8 bandpass keeps ~1% of the noise power, so unity-ish gain sits ~30 dB
   under the engine voice. The original 0.015–0.11 gains shipped physically

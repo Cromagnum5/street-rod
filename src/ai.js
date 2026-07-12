@@ -8,8 +8,10 @@
 // human-length beat, release past it) run through the same dt*9 ramp
 // raceTick applies to the player's keys; pedals are duty-cycle taps. That's
 // what makes a passing AI weave and correct like a human instead of
-// tracking a spline. Straights are sacred: every driver floors it flat-out
-// there (Jason's call, 2026-07-11) — skill expresses in the corners.
+// tracking a spline. The foot is down by default everywhere (Jason's call,
+// 2026-07-11): only the brakes and the friction circle take it away, exactly
+// like the player. Skill expresses in how early it brakes and how close to the
+// grip limit it plans — not in a lifted throttle.
 
 import { ROAD_HALF_W } from "./track.js";
 import { POWER_GRIP_FLOOR } from "./physics.js";
@@ -45,13 +47,23 @@ export class AIDriver {
       return { throttle: 1, brake: 0, steer: this.steer };
     }
 
+    // gentle rubber band: struggling AI finds a little extra, runaway AI lifts.
+    // It scales the planning grip (not the speed target) so it reaches both the
+    // corner cap and the braking scan — with the throttle flat-out by default,
+    // a target-only band could no longer help a trailing AI, only slow a
+    // leading one. Squared, because speed goes as sqrt(grip).
+    const gap = car.trackDist - playerDist; // positive = AI ahead
+    const band = Math.max(-1, Math.min(1, -gap / 120));
+    const bandMul = 1 + band * (0.10 - 0.06 * this.skill);
+
     // --- speed planning: slowest corner in the next few seconds ---
     // cornerGrip folds in the steady-state body-roll penalty, so soft-sprung
     // AI plans slower corners instead of understeering off the road
-    const grip = (car.stats.cornerGrip ?? car.stats.grip) * (0.86 + 0.12 * this.skill);
-    // corner we're in (or about to enter): hold its speed. Straights are
-    // flat-out for everyone — vmax is asymptotic, so a target above it never
-    // lets the pedal band engage; corners set the real cap
+    const grip = (car.stats.cornerGrip ?? car.stats.grip)
+      * (0.90 + 0.08 * this.skill) * bandMul * bandMul;
+    // corner we're in (or about to enter): this is the cap the ease-off band
+    // and the brakes hold the car to. Straights are flat-out for everyone —
+    // vmax is asymptotic, so the target never drops below the car's own speed
     let targetSpeed = car.vmax * 1.05;
     for (let ahead = 8; ahead <= 15 + car.speed * 0.5; ahead += 7) {
       const k = this.track.curvatureAt(car.trackDist + ahead);
@@ -74,33 +86,38 @@ export class AIDriver {
       }
     }
 
-    // gentle rubber band: struggling AI finds a little extra, runaway AI lifts
-    const gap = car.trackDist - playerDist; // positive = AI ahead
-    const band = Math.max(-1, Math.min(1, -gap / 120));
-    targetSpeed *= 1 + band * (0.10 - 0.06 * this.skill);
-
-    let throttle = 0, brake = 0;
-    if (needBrake > comfort) brake = Math.min(1, needBrake / 7); // /7 not /8: arrive a hair under
-    else if (needBrake > comfort * 0.7) throttle = 0;            // lift and coast to the marker
-    else if (car.speed < targetSpeed - 1) throttle = 1;
-    else if (car.speed > targetSpeed + 2) brake = Math.min(1, (car.speed - targetSpeed) / 8);
-    else throttle = 0.55;
+    // The foot is down unless a corner physically demands otherwise (Jason,
+    // 2026-07-11): the old "hold the planned corner speed" cruise band idled
+    // at 55% duty and the lift-and-coast branch shut the throttle a corner
+    // early, so the AI arrived at every turn already slow — it averaged 0.53
+    // of its own grip limit mid-corner while a flat-out driver in the same car
+    // sat at 0.62 and won by 3 s. Corner pace is now capped by the brakes and
+    // the friction circle, which is what caps the player.
+    let throttle = 1, brake = 0;
+    if (needBrake > comfort) {
+      brake = Math.min(1, needBrake / 7); // /7 not /8: arrive a hair under
+      throttle = 0;
+    } else if (car.speed > targetSpeed + 2) {
+      throttle = 0.55; // carrying too much in: ease, don't coast
+    }
 
     // friction-circle awareness: throttle eats lateral grip (physics.js), so
-    // budget the corner-throttle duty by how much grip this car's pedal
-    // actually eats. Near-stock cars barely load the circle and keep their
-    // pace; a built machine lifts and coasts through its binding corners.
+    // budget the corner-throttle duty by what the circle actually leaves. At a
+    // lateral load of `realLoad` the tires still have sqrt(1 - load^2) of drive
+    // budget — solve for that instead of interpolating toward a lift, and the
+    // AI stays on the power right up to the limit. Near-stock cars can't load
+    // the circle at corner speed and simply keep their foot in it.
     // load vs the car's real grip (not the skill-discounted planning grip):
     // low-skill margin is genuine headroom, don't lift inside it
     const kNow = this.track.curvatureAt(car.trackDist + car.speed * 0.4);
     const realLoad = kNow * car.speed * car.speed / (car.stats.cornerGrip ?? car.stats.grip);
     const instLoad = Math.min(1, car.stats.power / Math.max(car.speed, 5) / (car.stats.grip * car.stats.mass));
-    const shareOn = Math.max(POWER_GRIP_FLOOR, Math.sqrt(1 - instLoad * instLoad)); // lateral share left while the pedal is down
-    // 0.95: lift a beat early — high-skill planners run ~2% grip margin and
-    // need the anticipation; low-skill plans sit far below this anyway
-    if (realLoad > 0.5 && shareOn < 0.995) {
-      throttle = Math.min(throttle, Math.max(0, (0.95 - realLoad) / (1 - shareOn)));
-    }
+    // 0.97: a hair of anticipation, so the pedal eases before the tires let go
+    const latNeed = Math.min(1, realLoad / 0.97);
+    // POWER_GRIP_FLOOR: physics never squeezes the lateral share below it, so
+    // below that load full throttle can't break the corner anyway
+    const driveRoom = Math.max(POWER_GRIP_FLOOR, Math.sqrt(Math.max(0, 1 - latNeed * latNeed)));
+    if (instLoad > 1e-3) throttle = Math.min(throttle, driveRoom / instLoad);
 
     // --- steering: pure pursuit toward centerline + preferred lane ---
     const lookahead = 10 + car.speed * (0.55 + 0.25 * this.skill);
