@@ -388,8 +388,24 @@ the game page in headless chromium, then `page.evaluate` a dynamic
 `import("./src/carmesh.js")` (the importmap is already live), build the car
 into a fresh scene on a gray background with your own camera/lights, and
 screenshot that. Dead-rear + broadside + rear-3/4 views catch geometry
-that's technically present but visually hidden. The garage turntable spins
+that's technically present but visually hidden — add a *low* front-3/4, it's
+what exposes parts floating off the body. The garage turntable spins
 at 0.35 rad/s (~18 s/rev) if you do need in-game angles.
+
+But renders are the weakest of the mesh checks — screenshots hid the whole
+2026-07-12 gap crop (see the carmesh.js notes) for the life of the project.
+Two Node checks, bundled with the same esbuild `--alias:three` trick, find
+that class objectively and in seconds; run both before trusting a car render:
+1. **Floating parts** — build each `CAR_TIERS` car, world-`Box3` every mesh,
+   and flag any whose box (grown 1 mm) intersects no other. A part touching
+   nothing is bolted to nothing. This is what finally caught the prewar
+   running boards, which had hung in space since the first commit — 0.09
+   under the body's underside and 0.035 outboard of its flank, with the
+   right-hand one masked because it grazed the (also floating) exhaust pipe.
+2. **Wedge winding** — the prisms are convex, so a triangle is correctly
+   wound iff its normal points away from the centroid. See the winding gotcha.
+Both want to be re-run after *any* mesh edit: moving one box out from under
+another is exactly how these bugs get introduced.
 
 For physics/balance questions, skip the browser: bundle a Node script that
 imports `physics.js` (and `Track` if needed) with the same esbuild

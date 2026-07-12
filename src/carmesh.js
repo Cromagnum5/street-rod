@@ -101,11 +101,15 @@ function buildPrewar(paint, accentMat) {
   // cabin is a paint lower half (doors) + a glazed upper half; the rear quarter
   // stays solid paint, coupe-style, with a small backlight punched in it
   const cabin = box(1.15, 0.62, 1.25, paint); cabin.position.set(0, 0.76, -0.55); g.add(cabin);
-  const sideGlass = box(1.12, 0.4, 0.95, GLASS); sideGlass.position.set(0, 1.25, -0.4); g.add(sideGlass);
+  const sideGlass = box(1.05, 0.4, 0.95, GLASS); sideGlass.position.set(0, 1.25, -0.4); g.add(sideGlass);
   const quarter = box(1.15, 0.4, 0.3, paint); quarter.position.set(0, 1.25, -1.025); g.add(quarter);
-  const backlight = box(0.5, 0.22, 0.05, GLASS); backlight.position.set(0, 1.27, -1.19); g.add(backlight);
+  // sunk into the quarter panel, 5 mm proud — enough to beat z-fighting, not
+  // enough to read as a slab stuck on the back (same as the muscle backlight)
+  const backlight = box(0.5, 0.22, 0.04, GLASS); backlight.position.set(0, 1.27, -1.16); g.add(backlight);
   const roof = box(1.2, 0.12, 1.3, accentMat); roof.position.set(0, 1.5, -0.55); g.add(roof);
-  const ws = wedge(1.05, 0.5, 0.35, GLASS); ws.position.set(0, 1.05, 0.24); g.add(ws);
+  // glass tops out on the roof's underside (y=1.44) — run it higher and the
+  // wedge stabs halfway into the roof slab, breaking the roofline
+  const ws = wedge(1.05, 0.39, 0.35, GLASS); ws.position.set(0, 1.05, 0.24); g.add(ws);
   // trunk rides high enough to show the exposed rear axle beneath it
   const trunk = box(1.05, 0.45, 0.55, paint); trunk.position.set(0, 0.8, -1.45); g.add(trunk);
   for (const sx of [-1, 1]) {
@@ -119,9 +123,12 @@ function buildPrewar(paint, accentMat) {
   // root in buildCar so they stay planted with the wheels)
   spec.rearAxle = true;
   spec.frontAxle = true;
-  // running boards
+  // running boards, centred in the gap between the tires (z -0.93..0.93) — they
+  // used to sit 0.15 rearward and all but touch the back tire. They must also
+  // reach the body's flank (x=0.575) and underside (y=0.45): at 0.22 wide and
+  // y=0.32 they hung in space, bolted to nothing.
   for (const sx of [-1, 1]) {
-    const rb = box(0.22, 0.07, 1.6, accentMat); rb.position.set(sx * 0.72, 0.32, -0.15); g.add(rb);
+    const rb = box(0.3, 0.1, 1.55, accentMat); rb.position.set(sx * 0.7, 0.405, 0); g.add(rb);
   }
   // round headlights, hung off a chrome bar across the nose (they used to float)
   const bar = box(1.25, 0.06, 0.06, CHROME); bar.position.set(0, 0.85, 1.95); g.add(bar);
@@ -130,9 +137,10 @@ function buildPrewar(paint, accentMat) {
     hl.position.set(sx * 0.55, 0.85, 1.92); g.add(hl);
   }
   // exhaust pipe out the side (hot rod!) — it must live between the wheels
-  // (z -0.93..0.93) and tuck against the body, or it spears the front tire
+  // (z -0.93..0.93) and ride on the running board, or it spears the front tire
+  // and hangs off the car attached to nothing
   const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 8), CHROME);
-  pipe.rotation.x = Math.PI / 2 - 0.1; pipe.position.set(0.6, 0.44, -0.05); g.add(pipe);
+  pipe.rotation.x = Math.PI / 2 - 0.1; pipe.position.set(0.68, 0.51, -0.05); g.add(pipe);
 
   spec.length = 4.0;
   return { g, spec };
@@ -143,44 +151,52 @@ function buildFifties(paint, accentMat, fins) {
   const g = new THREE.Group();
   const spec = { wheelR: 0.38, wheelW: 0.3, trackW: 1.72, wheelBase: 3.0, whitewall: true };
 
-  const body = box(1.85, 0.62, 4.7, paint); body.position.set(0, 0.62, 0); g.add(body);
+  // paint mass is 10% shorter than it was, scaled about the ground: the belt
+  // drops 1.14 -> 1.06 and everything mounted on it (glass, fins, trim, lamps)
+  // comes down with it, while the roof stays put. That buys back greenhouse.
+  const body = box(1.85, 0.56, 4.7, paint); body.position.set(0, 0.59, 0); g.add(body);
   // deck runs nearly to the tail so the fins have something to stand on
-  const bodyTop = box(1.7, 0.22, 4.55, paint); bodyTop.position.set(0, 1.03, 0); g.add(bodyTop);
+  const bodyTop = box(1.7, 0.2, 4.55, paint); bodyTop.position.set(0, 0.96, 0); g.add(bodyTop);
   // hardtop greenhouse: glass on the sides with slim paint pillars. This was a
-  // solid paint box — a windowless brick between the two glass wedges.
-  const cabin = box(1.5, 0.44, 1.9, GLASS); cabin.position.set(0, 1.34, -0.35); g.add(cabin);
+  // solid paint box — a windowless brick between the two glass wedges. Glass
+  // height and both wedges track the belt and the roof: the screens must top out
+  // on the roof's underside (y=1.45), never partway into the slab.
+  const cabin = box(1.5, 0.4, 1.9, GLASS); cabin.position.set(0, 1.26, -0.35); g.add(cabin);
+  // pillars tuck under the roof's edge (x=0.775) — at 0.755 their outer faces
+  // stood 15 mm proud of it and the roof looked too narrow for its own posts
   for (const sx of [-1, 1]) {
-    const cp = box(0.07, 0.44, 0.18, paint); cp.position.set(sx * 0.755, 1.34, -1.21); g.add(cp);
-    const ap = box(0.07, 0.44, 0.14, paint); ap.position.set(sx * 0.755, 1.34, 0.53); g.add(ap);
+    const cp = box(0.07, 0.4, 0.18, paint); cp.position.set(sx * 0.74, 1.26, -1.21); g.add(cp);
+    const ap = box(0.07, 0.4, 0.14, paint); ap.position.set(sx * 0.74, 1.26, 0.53); g.add(ap);
   }
-  const roof = box(1.55, 0.1, 2.0, accentMat); roof.position.set(0, 1.6, -0.35); g.add(roof);
-  const ws = wedge(1.45, 0.45, 0.5, GLASS); ws.position.set(0, 1.12, 0.85); g.add(ws);
-  const rw = wedge(1.45, 0.45, 0.45, GLASS, true); rw.position.set(0, 1.12, -1.55); g.add(rw);
+  // thin slab, underside pinned at y=1.45 so the glass still tops out flush
+  const roof = box(1.55, 0.06, 2.0, accentMat); roof.position.set(0, 1.48, -0.35); g.add(roof);
+  const ws = wedge(1.45, 0.39, 0.5, GLASS); ws.position.set(0, 1.06, 0.85); g.add(ws);
+  const rw = wedge(1.45, 0.39, 0.45, GLASS, true); rw.position.set(0, 1.06, -1.55); g.add(rw);
 
   // chrome bumpers + grille bar
-  const fb = box(1.9, 0.22, 0.25, CHROME); fb.position.set(0, 0.45, 2.42); g.add(fb);
-  const rb = box(1.9, 0.22, 0.25, CHROME); rb.position.set(0, 0.45, -2.42); g.add(rb);
-  const gr = box(1.5, 0.16, 0.1, CHROME); gr.position.set(0, 0.75, 2.38); g.add(gr);
+  const fb = box(1.9, 0.22, 0.25, CHROME); fb.position.set(0, 0.44, 2.42); g.add(fb);
+  const rb = box(1.9, 0.22, 0.25, CHROME); rb.position.set(0, 0.44, -2.42); g.add(rb);
+  const gr = box(1.5, 0.16, 0.1, CHROME); gr.position.set(0, 0.71, 2.38); g.add(gr);
   // side chrome spear
   for (const sx of [-1, 1]) {
-    const spear = box(0.04, 0.07, 3.8, CHROME); spear.position.set(sx * 0.94, 0.82, 0); g.add(spear);
+    const spear = box(0.04, 0.07, 3.8, CHROME); spear.position.set(sx * 0.94, 0.77, 0); g.add(spear);
   }
   if (fins) {
     // fin rises toward the tail (it used to be built flipped — tall at the cabin,
     // tapering to nothing at the back) and stands on the deck instead of being
-    // half-buried in it. Kept low and in the accent color: a trim spear, not a wing.
+    // half-buried in it. Low, thin and body-colored: a blade, not a wing.
     for (const sx of [-1, 1]) {
-      const fin = wedge(0.16, 0.22, 1.15, accentMat);
-      fin.position.set(sx * 0.8, 1.13, -1.7); g.add(fin);
+      const fin = wedge(0.08, 0.22, 1.15, paint);
+      fin.position.set(sx * 0.8, 1.05, -1.7); g.add(fin);
     }
   }
   // brake lights on the tail panel for both bodies (fin tips left them floating)
   for (const sx of [-1, 1]) {
-    const tl = box(0.14, 0.1, 0.06, TAILLIGHT); tl.position.set(sx * 0.7, 0.8, -2.36); g.add(tl);
+    const tl = box(0.14, 0.1, 0.06, TAILLIGHT); tl.position.set(sx * 0.7, 0.75, -2.36); g.add(tl);
   }
   for (const sx of [-1, 1]) {
     const hl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), HEADLIGHT);
-    hl.position.set(sx * 0.68, 0.75, 2.36); g.add(hl);
+    hl.position.set(sx * 0.68, 0.71, 2.36); g.add(hl);
   }
 
   spec.length = 4.9;
@@ -198,11 +214,12 @@ function buildMuscle(paint, accentMat) {
   // the windshield foot, the fastback and the spoiler legs. Stop it short and
   // those float over the deck with open air underneath.
   const belt = box(1.68, 0.2, 3.15, paint); belt.position.set(0, 0.97, -0.575); g.add(belt);
-  // windshield is the same width as the side glass so their edges line up
-  const ws = wedge(1.5, 0.48, 0.75, GLASS); ws.position.set(0, 1.06, 0.62); g.add(ws);
+  // windshield is the same width as the side glass so their edges line up, and
+  // tops out on the roof's underside (y=1.45) rather than partway into the slab
+  const ws = wedge(1.5, 0.39, 0.75, GLASS); ws.position.set(0, 1.06, 0.62); g.add(ws);
   // greenhouse sides: side glass forward, solid quarter panels aft. The roof
   // needs them or the cabin is an open box you can see straight through.
-  const sideGlass = box(1.5, 0.42, 0.73, GLASS); sideGlass.position.set(0, 1.26, -0.115); g.add(sideGlass);
+  const sideGlass = box(1.5, 0.42, 0.74, GLASS); sideGlass.position.set(0, 1.26, -0.11); g.add(sideGlass);
   const quarter = box(1.53, 0.42, 0.42, paint); quarter.position.set(0, 1.26, -0.69); g.add(quarter);
   // roof must reach the windshield's top edge (z=0.245) — stop it short and that
   // edge's vertical back face pokes out ahead of it as a second pane of glass
