@@ -420,6 +420,7 @@ function showCard(idx, dir) {
 
 const race = {};
 window.__race = race; // debug handle for the headless smoke tests
+const CAM_FOLLOW = 10; // chase-camera follow gain; steady-state trail = speed / CAM_FOLLOW
 const tachoSegs = [];
 {
   const tacho = el("tacho");
@@ -637,9 +638,13 @@ function raceTick(t, dt) {
   // camera height rides a slower-smoothed copy of the car's road height so a
   // future crest/dip won't lurch the frame (Jason + big camera moves = seasick)
   race.camY += (p.y - race.camY) * Math.min(1, dt * 4);
-  const dist = 4.3 + race.camSpeed * 0.013;
-  const camGoal = new THREE.Vector3(p.x - fx * dist, race.camY + 2.15 + race.camSpeed * 0.004, p.z - fz * dist);
-  camera.position.lerp(camGoal, 1 - Math.exp(-dt * 5));
+  const dist = 4.3 + race.camSpeed * 0.0065;
+  const camGoal = new THREE.Vector3(p.x - fx * dist, race.camY + 2.15 + race.camSpeed * 0.002, p.z - fz * dist);
+  // CAM_FOLLOW is the real chase-distance knob: an exponential smoother chasing a
+  // target moving at v settles v/gain behind it, so this adds 0.1 s of travel (8 m
+  // at 180 mph) on top of `dist` — 30x the dolly term. Lower it and the camera
+  // falls back at speed; raise it and the chase goes rigid.
+  camera.position.lerp(camGoal, 1 - Math.exp(-dt * CAM_FOLLOW));
   camera.lookAt(p.x + fx * 7, race.camY + 1.1, p.z + fz * 7);
   // gentle widening with speed; the drama comes from a small acceleration kick
   // (zoom-out surge on launch/passing, slight tighten under braking)

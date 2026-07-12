@@ -152,9 +152,30 @@ sound is synthesized live with the Web Audio API.
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big
   FOV swings. Steady-speed widening is capped at +9°. Chase distance is
-  deliberately tight (Jason, 2026-07-10): `4.3 + camSpeed * 0.013` — ~5 m
-  behind at speed, height scaled to keep the same look-down angle. Don't
-  pull it back out; any closer needs the lookAt point pulled in too.
+  deliberately tight (Jason, 2026-07-10): `4.3 + camSpeed * 0.0065`, height
+  scaled to keep the same look-down angle. Don't pull it back out; any
+  closer needs the lookAt point pulled in too.
+  **The real chase-distance knob is `CAM_FOLLOW`, not that formula**
+  (measured 2026-07-12 after Jason said the camera was still way back at
+  180 mph). `camera.position.lerp(camGoal, 1 - exp(-dt*CAM_FOLLOW))` is an
+  exponential smoother chasing a target that never stops moving, so it
+  settles a *speed-proportional* distance behind it: trail = speed /
+  CAM_FOLLOW. At the old gain of 5 that was 0.2 s of travel — 16 m at
+  180 mph, ~30x the dolly term, and it's framerate-independent (measured
+  0.176–0.19 · v across 12–35 fps, i.e. the same in a real browser). The
+  documented "~5 m behind at speed" was never true in motion; it was ~20 m.
+  Gain is now 10, halving the drift (measured at 180 mph: 19.5 m → 11.0 m
+  camera distance, car 67 → 134 px wide). Lower it and the camera falls
+  back at speed; raise it and the chase goes rigid (and jitter/contact
+  stutter stops being damped — see the contact-stutter notes).
+  The "reaching new speeds" rush comes from the **FOV** widening, not the
+  dolly (63.5° at 60 mph → 69.2° at 180 is unchanged by any of this), so
+  cutting pull-back keeps the drama and keeps the car big in frame.
+  Measure this with a pinned-speed harness, don't eyeball it: pin
+  `player.speed` via `Object.defineProperty` on the `__race` handle (seed
+  the value *before* pinning or `undefined` NaNs the integrator), let
+  camSpeed settle ~3 s, then read camera-to-car distance and the car's
+  projected pixel box.
 - Suspension (added 2026-07-10): the body is a spring-damper chasing chassis
   acceleration — soft springs lean ~7–8° with underdamped slosh (deliberately
   cartoonish), Full Race Suspension sits ~1° flat. Roll costs grip (load
