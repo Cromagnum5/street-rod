@@ -152,6 +152,14 @@ sound is synthesized live with the Web Audio API.
   slows but doesn't punish, losing AI gets a mild rubber band.
 - Upgrades must be **audible**, not just faster (that's why audio is synth).
 - Bosses are **pink** (pink card, pink-painted car) and pink-slip only.
+- **Losing a pink slip costs you your build, not your class** (Jason's call,
+  2026-07-12). The boss takes the car you brought; the junkyard hands you a
+  bone-stock car of the *same* tier (`player.parts = freshParts()`, `carTier`
+  untouched — it used to reset to 0). So a loss is a rebuild-and-retry inside
+  the class, not a fall back down the ladder: same boss, same board, and your
+  cash is untouched, which keeps the pride-run safety net working at your own
+  tier. With parts at ×0.6 pricing a class's full build is a handful of races,
+  so the retry loop is short by design.
 - A broke player must never soft-lock — under `brokeLine(tier)` the whole board
   becomes $0-wager "pride runs" for a real purse, with Free-Ride Freddy holding
   the easiest slot. (This *is* the safety net; see the wager-ladder entry for why

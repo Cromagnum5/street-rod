@@ -646,9 +646,8 @@ states.RESULTS = {
         sfx.cashSound();
       } else {
         html += `${opp.name} takes your keys and doesn't look back.<br>` +
-          `Your <span class="pink">${playerTier().name}</span> is gone.<br>` +
-          `The junkyard man takes pity — there's a rusty Model A out back with your name on it.`;
-        player.carTier = 0;
+          `Your built <span class="pink">${playerTier().name}</span> is gone.<br>` +
+          `The junkyard man takes pity — there's a bone-stock ${playerTier().short} out back with your name on it.`;
         player.parts = freshParts();
         sfx.loseSound();
       }
