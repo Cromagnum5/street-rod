@@ -100,6 +100,51 @@ const EXIT_PUSH = 1.0;      // fraction past the solved cap he'll push on an ope
 const EXIT_OPEN = 0.7;      // curvature ahead under this fraction of now = opening
 const EXIT_SEES = 1.1;      // s of travel ahead he reads the exit from
 
+// Oversteer commitment (Jason, 2026-07-13: "I can use oversteer to exit
+// corners... consistently faster than the AI"). The physics has said so all
+// along — past the grip cap the nose keeps SLIP_YAW_KEEP of the over-ask,
+// slip recovery bends the path ON TOP of the grip cap, and the scrub taxes
+// are capped (~23%/s worst case) while the throttle keeps making power — so
+// the fast line through a binding corner is to arrive OVER the planned limit
+// and let the steering bleed the excess, not to brake down to it. DRIFT_PLAN
+// banks extra planning grip on that (skill²-scaled: it's the expert move, a
+// 2★ gets ~18% of it, the boss drives it properly), which mostly means the
+// braking scan fires later and shallower; the slip model does the rest.
+//
+// Two protections, both measured necessary and both self-tuning per car:
+// 1. DRIFT_SUR discounts the boost by the car's full-throttle surplus accel
+//    at that corner's speed. A GTO's surplus (~3-6 m/s²) is near the scrub
+//    scale, so its excess sheds and it can bank a lot (~+45%); a maxed 'Cuda
+//    re-injects 8-15 m/s² — no scrub outruns that — so it banks less (~+28%).
+//    Flat boosts fail: 0.3 is the 'Cuda's ceiling but leaves the GTO 1.9 s
+//    slow, 0.5 is the GTO's sweet spot but puts the 'Cuda 9.6 s/race in the
+//    dirt (16 seeds). The surplus IS the discriminator — don't replace it
+//    with per-tier tuning, part levels move it (a stock 'Cuda banks plenty).
+// 2. DRIFT_LIFT: over the REAL limit a big-power car accelerates through the
+//    corner (at 'Cuda speeds instLoad ≈ POWER_GRIP_FLOOR, so the solved
+//    friction-circle cap resolves to ~1.0 and gives up exactly when needed)
+//    — so when realLoad > 1 AND the motor's surplus beats what scrub can
+//    shed (DRIFT_LIFT_SUR), fade the throttle toward drag-neutral and let
+//    the car shed. This is the doctrine's own exception, not a violation:
+//    a corner the car genuinely cannot make is the one thing that lifts the
+//    foot. The surplus gate keeps it off weaker cars — gating on slip
+//    instead fires too late ('Cuda), gating on nothing robs the GTO of its
+//    free scrub-cornering (both measured). Below the gate nothing changes.
+// Measured (32 seeds, solo, skill 1.0, vs pre-oversteer baseline): Deuce L1
+// −1.8 s, Merc L2 −3.3, Bel Air stock −3.6, GTO L2 −3.6, Charger L3 −2.5,
+// 'Cuda L1 −3.7, 'Cuda maxed −2.1, offroad at or under baseline everywhere,
+// brake time roughly halved; Model A unchanged (its corners never bind).
+// Trialed and REJECTED: exit-flick lifts (no-op), corner throttle-hold
+// (no-op), early "feasibility" braking for big stops (no effect — the hot
+// arrivals it targeted weren't the failure), trail-braking past the limit
+// (cleanest 'Cuda but robs the GTO 3+ s — braking's circle exemption makes
+// it a stealth un-boost), lift thresholds above realLoad 1.0 ('Cuda needs
+// the fade from exactly 1.0).
+const DRIFT_PLAN = 0.8;     // planning-grip boost banked on oversteer, at skill 1
+const DRIFT_SUR = 6;        // m/s² of corner-speed surplus that halves the boost
+const DRIFT_LIFT = 4;       // throttle fade per unit of realLoad past 1.0
+const DRIFT_LIFT_SUR = 6;   // m/s² of surplus below which the lift never fires
+
 export class AIDriver {
   constructor(car, track, skill, lanePreference = 2.5, aggression = 0.6) {
     this.car = car;
@@ -129,6 +174,9 @@ export class AIDriver {
     this.leanT = 99;                      // seconds since a panel last touched his
     this.exitPush = EXIT_PUSH;            // instance knob so a sim harness can sweep
     this.exitSm = 0;                      // smoothed "the corner is opening ahead"
+    // oversteer commitment, skill²-scaled — the expert move (see DRIFT_PLAN
+    // above). Instance knob so a sim harness can sweep it.
+    this.driftPlan = DRIFT_PLAN * skill * skill;
   }
 
   // Returns { throttle, brake, steer }
@@ -161,6 +209,10 @@ export class AIDriver {
     // every corner with grip in hand and no way to spend it.
     const grip = (car.stats.cornerGrip ?? car.stats.grip)
       * (0.98 + 0.10 * this.skill) * bandMul * bandMul;
+    // full-throttle surplus accel (m/s^2) at speed v: what the motor can put
+    // back while the scrub tries to shed — the strong-car discriminator
+    const st = car.stats;
+    const surplusAt = (v) => (st.power / Math.max(v, 5) - st.drag * v * v - 0.18 * st.mass) / st.mass;
 
     // The only thing that lifts the foot is a corner the car genuinely cannot
     // make. Scan the whole braking distance and find the decel the most binding
@@ -171,7 +223,11 @@ export class AIDriver {
     for (let ahead = 15; ahead <= scan; ahead += 12) {
       const k = this.track.curvatureAt(car.trackDist + ahead);
       if (k > 1e-4) {
-        const vc = Math.sqrt(grip / k);
+        // corner speed the oversteer is trusted to carry: the boost fades as
+        // the car's surplus grows past DRIFT_SUR — a motor that can out-pull
+        // the scrub can't be allowed to bank on the scrub
+        const boost = this.driftPlan / (1 + Math.max(0, surplusAt(Math.sqrt(grip / k))) / DRIFT_SUR);
+        const vc = Math.sqrt(grip * (1 + boost) / k);
         if (car.speed > vc) {
           needBrake = Math.max(needBrake, (car.speed * car.speed - vc * vc) / (2 * ahead));
         }
@@ -221,6 +277,18 @@ export class AIDriver {
     if (instLoad > 1e-3) {
       const cap = (driveRoom / instLoad) * (1 + this.exitPush * this.exitSm);
       throttle = Math.min(throttle, cap);
+    }
+    // Over-limit lift (see DRIFT_LIFT above): past the real grip limit a car
+    // whose motor out-pulls the scrub only pushes itself wider — the solved
+    // cap above resolves to ~1.0 at POWER_GRIP_FLOOR loads and gives up
+    // exactly when it's needed. Fade the throttle toward drag-neutral (hold
+    // speed, never below — the scrub does the shedding) so the oversteer the
+    // planner banked on can actually pay. The surplus gate keeps this off
+    // cars whose excess sheds on its own; for them a lift is still a bug.
+    if (realLoad > 1 && brake === 0 && surplusAt(car.speed) > DRIFT_LIFT_SUR) {
+      const hold = Math.max(0, 1 - (realLoad - 1) * DRIFT_LIFT);
+      const neutral = Math.min(1, car.stats.drag * car.speed ** 3 / car.stats.power);
+      throttle = Math.min(throttle, neutral + (1 - neutral) * hold);
     }
 
     // --- steering: pure pursuit toward the line the driver is trying to drive ---

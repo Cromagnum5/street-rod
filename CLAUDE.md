@@ -528,6 +528,62 @@ sound is synthesized live with the Web Audio API.
   Related, measured the same day and REJECTED — never relax `minHold` with
   skill: 0.05 at skill 1.0 alone put a maxed 'Cuda from 0.0 to 15.2 s/race in
   the dirt (the stab-overshoot limit cycle at speed).
+- **The AI oversteers on purpose now** (Jason, 2026-07-13: "I can use oversteer
+  to exit corners. This is consistently faster than the AI... run trials with a
+  few techniques to find what is the fastest"). The trials said the win isn't a
+  flashy drift move — it's *planning* like an oversteerer: in this physics the
+  fast path through a binding corner is to arrive OVER the grip limit and let
+  the steering bleed the excess (slip recovery bends the path on top of the
+  grip cap, every scrub is capped, and the throttle keeps making power — the
+  same physics behind "lifting is never worth it"). `DRIFT_PLAN` in ai.js banks
+  extra planning grip (skill²-scaled: 2★ ~18% of it, boss ~70%, 5★ full), which
+  in practice deletes brake time (roughly halved at skill 1). Load-bearing
+  findings, all measured (16–32 seeds, flat-out-proxy yardstick):
+  1. **A flat boost cannot work — the discriminator is the motor's surplus at
+     corner speed.** Per-car clean ceilings differ 3x (GTO L2 takes +0.5 and
+     gains 3.9 s; the maxed 'Cuda's ceiling is ~+0.15, and +0.5 puts it 9.6
+     s/race in the dirt) because what kills the technique is a car that can
+     *hold* its over-limit speed against the scrub: full-throttle surplus at
+     corner speeds is ~3–6 m/s² for the GTO but 8–15 for the 'Cuda. `DRIFT_SUR`
+     discounts each corner's boost by that surplus (computed per corner in the
+     braking scan), which reproduced every per-car optimum from one global
+     constant. Don't replace it with per-tier tuning — part levels move it.
+  2. **Big-power cars need an over-limit lift, and it is the doctrine's own
+     exception, not a violation.** Past the real limit the 'Cuda *accelerates*
+     (+3 m/s² net mid-corner): its instLoad sits at `POWER_GRIP_FLOOR`, so the
+     solved friction-circle cap resolves to ~1.0 and gives up exactly when
+     needed. The lift fades throttle toward **drag-neutral** (hold speed, never
+     slow the car itself — the scrub does the shedding) from realLoad 1.0, gated
+     on `surplusAt(speed) > DRIFT_LIFT_SUR` so it never touches cars whose
+     excess sheds on its own. Every other gate measured wrong: slip-gating fires
+     too late (the 'Cuda must lift *before* the slide develops), lateral-gating
+     likewise, no gate robs the GTO ~1 s, and thresholds above realLoad 1.0
+     re-break the 'Cuda.
+  3. **Rejected by trial**: exit-lift flicks and corner throttle-holds (both
+     literal no-ops — the cap rarely binds where they fire); early "feasibility"
+     braking for big stops (targeted hot arrivals that weren't the failure);
+     trail-braking past the limit (cleanest 'Cuda of all, but braking's
+     friction-circle exemption makes it a stealth un-boost — it robbed the GTO
+     3+ s). And nothing helps the Model A: a stock car never touches its grip
+     limit, so there is nothing for oversteer to buy (the whole feature is
+     worth 0.00 s there, by design).
+  4. Pace, 32 seeds, skill 1.0 vs the old planner: Deuce L1 −1.8 s, Merc L2
+     −3.3, Bel Air stock −3.6, GTO L2 −3.6, Charger L3 −2.5, 'Cuda L1 −3.7,
+     'Cuda maxed −2.1; offroad at or under the old numbers everywhere; AI slip
+     peaks stay 0.07–0.17 — it reads as later braking and committed corners,
+     not a drift show. The AI's remaining gap to the flat-out proxy is now
+     mostly the proxy's free dirt line (deferred issue), not cornering.
+  5. **Balance moved and the movement is healthy, but the boss gate rose.**
+     Full build×slot matrix: every matched slot stays 100%, and the one-level-
+     short cells got *more* binary (baseline had gone mushy at the top — T5/T6
+     reach-up upsets of 75–94% dropped to 25–56%), so the judgment-game
+     contract is stronger. Boss margins (maxed player, 16/16 wins everywhere):
+     T0 5.05→3.20 s, T1 10.21→7.51, T2 10.27→6.91, T3 10.52→6.84, T4
+     12.04→8.09, T5 12.84→9.02. This is the **fourth** boss tightening in a
+     row: the readiness gate rose about half a part level (T0 at L2.5:
+     16/16→12/16; T1 at L2: 15/16→9/16). If playtest says a boss is too hard,
+     the first knob is the skill² in the constructor's `driftPlan` (drop bosses
+     toward linear), before touching planning grip.
 - The racing line is real and skill buys it (Jason's call, 2026-07-12: "high
   tiers should take perfect lines, lower tiers less perfect but still in the
   ballpark"). `Track.racingOffset(d)` is the curvature-minimizing path through
