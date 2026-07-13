@@ -14,7 +14,7 @@
 // grip limit it plans — not in a lifted throttle.
 
 import { ROAD_HALF_W } from "./track.js";
-import { POWER_GRIP_FLOOR } from "./physics.js";
+import { POWER_GRIP_FLOOR, CONTACT_END, CONTACT_R } from "./physics.js";
 
 // Racecraft: how the driver reacts to a car leaning on him. He does not swerve
 // at you and he does not block — he simply refuses to be moved, holding a little
@@ -78,6 +78,24 @@ const WAKE_AIM = 12;        // m — he lines up with a short deliberate look at
 const WAKE_STEER_MAX = 0.45; // fraction of lock: a move across, never a swerve
 const SLINGSHOT = 6;        // m gap inside which, with a run on you, he pulls out
 const SLINGSHOT_OUT = 2.8;  // m he steps aside to make the pass
+// The tuck-in waits for the leader's TAIL, not his center (Jason, 2026-07-13:
+// pulling ahead of a side-by-side AI made him "tuck in behind me too early and
+// hit my rear end... he goes squirrely" — his read of the cause was exactly
+// right). Every gap here is center-to-center, and two cars overlap out to
+// 2*(CONTACT_END+CONTACT_R) ≈ 4.9 m of it, so a driver who cuts for the wake
+// lane the moment gap > WAKE_MIN puts his nose into the leader's rear quarter —
+// worst-case, since commit peaks at WAKE_MIN. Traced: full 0.45 steer pressure
+// into the player at 2.05 m of gap, a 3.8 m/s quarter-panel hit, and 0.00 draft
+// collected all run (physics grants no tow while the bodies overlap, so the
+// early cut bought nothing). Until his nose is truly past the tail (TUCK_CLEAR)
+// he *stages*: holds his current offset, at most a door's width off the
+// leader's lane (TUCK_KEEP), and cuts across only once clear. The stage lane is
+// min(current offset, TUCK_KEEP) — it only ever stops inward motion, never
+// demands outward — so a car already lined up on the bumper keeps lane =
+// player's lane exactly and stays in the tow (re-learning the WAKE_MIN lesson:
+// an outward shove here is the "abandons the draft the moment it pays" bug).
+const TUCK_CLEAR = 2 * (CONTACT_END + CONTACT_R) + 1.2; // ≈ 6.1 m: nose past the tail, with margin
+const TUCK_KEEP = 2 * CONTACT_R + 0.4;                  // ≈ 2.7 m: staging offset beside the leader
 
 // Corner-exit commitment (Jason, 2026-07-13: "get on the gas harder coming out
 // of corners"). The friction-circle cap below solves for the lateral load the
@@ -398,6 +416,13 @@ export class AIDriver {
     // the draft would make him *follow* better instead of *race* better.
     if (gap < SLINGSHOT && this.car.speed > player.speed + 0.5) {
       lane = player.lateral + (player.lateral > 0 ? -1 : 1) * SLINGSHOT_OUT; // roomier side
+    } else if (gap < TUCK_CLEAR) {
+      // Nose not yet past the leader's tail: stage beside him, don't cut across
+      // (see TUCK_CLEAR above). min() means this only halts inward motion — a
+      // car already square in the tow keeps the leader's lane untouched.
+      const side = this.car.lateral >= player.lateral ? 1 : -1;
+      const off = Math.min(Math.abs(this.car.lateral - player.lateral), TUCK_KEEP);
+      lane = player.lateral + side * off;
     }
     // Commitment fades with distance as well as skill. Without the distance term
     // he mirrors your every lane change from 45 m back like a duckling — which is

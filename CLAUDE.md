@@ -391,6 +391,25 @@ sound is synthesized live with the Web Audio API.
      let a fast car commit to the wake lane on the last of a straight and arrive at
      the corner off its line — it doubled the boss's time in the dirt (2.4 → 4.2
      s/race). Drafting is a straight-line move; in a corner the line is worth more.
+  6. **The tuck-in waits for your TAIL, not your center** (Jason, 2026-07-13:
+     pulling ahead of a side-by-side AI made him "tuck in behind me too early and
+     hit my rear end... he goes squirrely" — and his read of the cause was exactly
+     right). Every gap in `wake()` is center-to-center, and two car bodies overlap
+     out to 2·(CONTACT_END+CONTACT_R) ≈ 4.9 m of it — but the hunt engaged at
+     WAKE_MIN 2 m, which is also where commit *peaks*, so he cut for your lane
+     hardest at the moment of deepest overlap. Traced: full 0.45 steer pressure
+     into the player at 2.05 m of gap, a 3.8 m/s rear-quarter hit, fishtail, and
+     **0.00 draft collected all run** — physics grants no tow while the bodies
+     overlap, so the early cut bought him nothing. Now below `TUCK_CLEAR` (≈6.1 m,
+     nose truly past the tail) he *stages*: the wake lane holds at min(current
+     offset, `TUCK_KEEP` ≈ 2.7 m) off yours, and he cuts across only once clear.
+     The min() is load-bearing — it only halts inward motion, never demands
+     outward, so a car already square in the tow keeps your lane exactly (the
+     WAKE_MIN lesson again: an outward shove is the "abandons the draft the moment
+     it pays" bug). Measured: repro hits 6 → 0, draft collected 0.00 → 0.72,
+     bumper-riding guard 0.94 unchanged, 16-seed ladder margins moved ≤0.08 s.
+     CONTACT_END/CONTACT_R are exported from physics.js for this — the stage
+     geometry must track the contact geometry.
   Balance: the ladder is intact and unmoved (≤0.2 s in every street cell, both for
   a player on the racing line and one holding a lane). The **boss race tightens**:
   a maxed 'Cuda still wins, but by +2.8 s instead of +5.4 s against a player on the

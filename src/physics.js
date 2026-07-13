@@ -384,8 +384,10 @@ export function resolveDraft(a, b, dt) {
 // your closing speed and pay for it yourself. Along the contact face it's rub
 // friction — door-to-door at the same speed costs nothing at all, and only the
 // *difference* in speed scrubs (the faster car drags the slower one along).
-const CONTACT_END = 1.3;    // circle centers sit this far fore/aft of car center
-const CONTACT_R = 1.15;     // circle radius; pair sum 2.3 ≈ car width
+export const CONTACT_END = 1.3; // circle centers sit this far fore/aft of car center
+export const CONTACT_R = 1.15;  // circle radius; pair sum 2.3 ≈ car width
+                                // (AI imports both: its wake tuck-in stages off the
+                                // leader's real tail, not his center — see ai.js)
 const CONTACT_KICK = 0.03;  // rad of nose/tail kick per m/s of closing speed
 const CONTACT_KICK_CAP = 0.25;
 const CONTACT_TAP = 1.2;    // m/s closing speed below which it's a rub, not a hit
