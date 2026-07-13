@@ -79,6 +79,27 @@ const WAKE_STEER_MAX = 0.45; // fraction of lock: a move across, never a swerve
 const SLINGSHOT = 6;        // m gap inside which, with a run on you, he pulls out
 const SLINGSHOT_OUT = 2.8;  // m he steps aside to make the pass
 
+// Corner-exit commitment (Jason, 2026-07-13: "get on the gas harder coming out
+// of corners"). The friction-circle cap below solves for the lateral load the
+// car is carrying *now* — correct mid-corner, but on the way out the load is
+// falling every frame, so a cap that keeps chasing it stays on the pedal a
+// beat behind a human, who commits to the exit the moment he can see it open.
+// EXIT_PUSH relaxes the cap once the road ahead is visibly opening; the slip
+// model catches what that over-asks (same forgiving physics as the player's
+// foot). Measured (16 seeds, solo, skill 1.0): worth −0.11 s GTO L2, −0.22
+// Charger maxed, −0.23 'Cuda maxed, roads clean, slip peak 0.08 → 0.16 — a
+// visible squirt of power-on rotation out of the turn. Don't crank it: push 2
+// and even "no cap at all" measured NO faster (the 'Cuda got slower, 1.4
+// s/race hanging sideways) — push 1 already recovers the whole real cost of
+// the cap. (A smooth-steering, never-braking proxy loses ~1.5 s to the cap in
+// a maxed 'Cuda, but the real driver's brakes and line hide most of that.)
+// Deliberately not skill-scaled: hesitating on an open exit was a lift the
+// car didn't need (that recurring bug family), not a skill expression, and
+// the whole effect is smaller than one star.
+const EXIT_PUSH = 1.0;      // fraction past the solved cap he'll push on an open exit
+const EXIT_OPEN = 0.7;      // curvature ahead under this fraction of now = opening
+const EXIT_SEES = 1.1;      // s of travel ahead he reads the exit from
+
 export class AIDriver {
   constructor(car, track, skill, lanePreference = 2.5, aggression = 0.6) {
     this.car = car;
@@ -106,6 +127,8 @@ export class AIDriver {
     this.steerKey = 0;                    // current key state: -1 / 0 / +1
     this.keyT = -1;                       // when the key state last changed
     this.leanT = 99;                      // seconds since a panel last touched his
+    this.exitPush = EXIT_PUSH;            // instance knob so a sim harness can sweep
+    this.exitSm = 0;                      // smoothed "the corner is opening ahead"
   }
 
   // Returns { throttle, brake, steer }
@@ -189,7 +212,16 @@ export class AIDriver {
     // POWER_GRIP_FLOOR: physics never squeezes the lateral share below it, so
     // below that load full throttle can't break the corner anyway
     const driveRoom = Math.max(POWER_GRIP_FLOOR, Math.sqrt(Math.max(0, 1 - latNeed * latNeed)));
-    if (instLoad > 1e-3) throttle = Math.min(throttle, driveRoom / instLoad);
+    // Exit commitment (see EXIT_PUSH above): once the corner is opening ahead,
+    // lean past the solved cap and get on the gas. The signal is smoothed —
+    // the raw comparison flutters frame-to-frame as the sample points slide
+    // along the track, and a fluttering cap chops the pedal duty to bits.
+    const kOut = this.track.curvatureAt(car.trackDist + car.speed * EXIT_SEES);
+    this.exitSm += ((kOut < kNow * EXIT_OPEN ? 1 : 0) - this.exitSm) * Math.min(1, dt * 4);
+    if (instLoad > 1e-3) {
+      const cap = (driveRoom / instLoad) * (1 + this.exitPush * this.exitSm);
+      throttle = Math.min(throttle, cap);
+    }
 
     // --- steering: pure pursuit toward the line the driver is trying to drive ---
     const lookahead = 10 + car.speed * (0.55 + 0.25 * this.skill);

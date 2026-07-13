@@ -510,6 +510,24 @@ sound is synthesized live with the Web Audio API.
   so boss margins tightened ~1.5 s — a maxed car still wins the pink-slip race
   by 4.5–12.6 s across the ladder, but if the boss ever becomes unbeatable the
   planning-grip line above is the first knob.
+  The fourth lift-the-car-didn't-need was the friction-circle cap itself **on
+  corner exits** (fixed 2026-07-13, Jason: "get on the gas harder coming out of
+  corners"): the cap solves for the load the car carries *now*, so on the way
+  out it chases a falling number and stays a beat behind a human, who commits
+  the moment he can see the exit open. `EXIT_PUSH` in ai.js relaxes the cap by
+  up to 2x as the corner opens ahead (smoothed signal — the raw comparison
+  flutters and chops the pedal duty). Worth −0.11 s (GTO L2) to −0.23 s ('Cuda
+  maxed), roads clean, slip peak 0.08→0.16 — a visible squirt of power-on
+  rotation. Two measured bounds, don't rediscover them: push 2 and even *no
+  cap at all* are NO faster (the 'Cuda gets slower, 1.4 s/race sideways — push
+  1 already recovers the cap's whole real cost; the 1.5 s a smooth never-
+  braking proxy loses to the cap is mostly hidden by the real driver's brakes
+  and line), and it's deliberately **not skill-scaled** (a lift the car didn't
+  need is a bug at every skill, and the whole effect is under one star).
+  Ladder check: street slots moved ≤0.21 s, boss margins tightened ≤0.14 s.
+  Related, measured the same day and REJECTED — never relax `minHold` with
+  skill: 0.05 at skill 1.0 alone put a maxed 'Cuda from 0.0 to 15.2 s/race in
+  the dirt (the stab-overshoot limit cycle at speed).
 - The racing line is real and skill buys it (Jason's call, 2026-07-12: "high
   tiers should take perfect lines, lower tiers less perfect but still in the
   ballpark"). `Track.racingOffset(d)` is the curvature-minimizing path through
