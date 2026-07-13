@@ -53,9 +53,9 @@ export const PARTS = {
     affects: "power",
     levels: [
       { n: "Stock Motor",      mult: 1.00, price: 0 },
-      { n: "Hot Cam + Carb",   mult: 1.18, price: 300 },
-      { n: "Performance V8",   mult: 1.42, price: 850 },
-      { n: "Full Race Motor",  mult: 1.72, price: 2000 },
+      { n: "Hot Cam + Carb",   mult: 1.18, price: 110 },
+      { n: "Performance V8",   mult: 1.42, price: 300 },
+      { n: "Full Race Motor",  mult: 1.72, price: 720 },
     ],
   },
   induction: {
@@ -63,9 +63,9 @@ export const PARTS = {
     affects: "power",
     levels: [
       { n: "Stock Intake",     mult: 1.00, price: 0,    whine: 0 },
-      { n: "Twin Carbs",       mult: 1.10, price: 350,  whine: 0 },
-      { n: "Turbocharger",     mult: 1.24, price: 1100, whine: 0.6 },
-      { n: "Supercharger",     mult: 1.42, price: 2400, whine: 1.0 },
+      { n: "Twin Carbs",       mult: 1.10, price: 120,  whine: 0 },
+      { n: "Turbocharger",     mult: 1.24, price: 390,  whine: 0.6 },
+      { n: "Supercharger",     mult: 1.42, price: 840, whine: 1.0 },
     ],
   },
   exhaust: {
@@ -73,9 +73,9 @@ export const PARTS = {
     affects: "power",
     levels: [
       { n: "Stock Pipes",      mult: 1.00, price: 0,   bright: 0.0 },
-      { n: "Glasspacks",       mult: 1.05, price: 180, bright: 0.35 },
-      { n: "Headers + Duals",  mult: 1.11, price: 500, bright: 0.7 },
-      { n: "Open Headers",     mult: 1.18, price: 1200, bright: 1.0 },
+      { n: "Glasspacks",       mult: 1.05, price: 60, bright: 0.35 },
+      { n: "Headers + Duals",  mult: 1.11, price: 180, bright: 0.7 },
+      { n: "Open Headers",     mult: 1.18, price: 420, bright: 1.0 },
     ],
   },
   tires: {
@@ -83,9 +83,9 @@ export const PARTS = {
     affects: "grip",
     levels: [
       { n: "Worn Bias-Ply",    mult: 1.00, price: 0 },
-      { n: "Street Radials",   mult: 1.13, price: 220 },
-      { n: "Wide Grippers",    mult: 1.27, price: 600 },
-      { n: "Racing Slicks",    mult: 1.45, price: 1400 },
+      { n: "Street Radials",   mult: 1.13, price: 80 },
+      { n: "Wide Grippers",    mult: 1.27, price: 210 },
+      { n: "Racing Slicks",    mult: 1.45, price: 510 },
     ],
   },
   suspension: {
@@ -93,9 +93,9 @@ export const PARTS = {
     affects: "handling",
     levels: [
       { n: "Sagging Leaf Springs", price: 0,    softness: 1.00 },
-      { n: "Heavy-Duty Shocks",    price: 250,  softness: 0.62 },
-      { n: "Sway Bars + Lowered",  price: 700,  softness: 0.36 },
-      { n: "Full Race Suspension", price: 1600, softness: 0.16 },
+      { n: "Heavy-Duty Shocks",    price: 90,  softness: 0.62 },
+      { n: "Sway Bars + Lowered",  price: 240,  softness: 0.36 },
+      { n: "Full Race Suspension", price: 570,  softness: 0.16 },
     ],
   },
   gearbox: {
@@ -103,9 +103,9 @@ export const PARTS = {
     affects: "shift",
     levels: [
       { n: "Stock 3-Speed",    mult: 1.00, price: 0,    shiftTime: 0.45 },
-      { n: "4-Speed Automatic", mult: 1.06, price: 300,  shiftTime: 0.32, minGears: 4 },
-      { n: "Close-Ratio Box",  mult: 1.12, price: 800,  shiftTime: 0.22 },
-      { n: "Race Box",         mult: 1.18, price: 1800, shiftTime: 0.12 },
+      { n: "4-Speed Automatic", mult: 1.06, price: 110,  shiftTime: 0.32, minGears: 4 },
+      { n: "Close-Ratio Box",  mult: 1.12, price: 290,  shiftTime: 0.22 },
+      { n: "Race Box",         mult: 1.18, price: 660, shiftTime: 0.12 },
     ],
   },
 };
@@ -149,5 +149,5 @@ export const BOSSES = [
   { name: "THE KING",        flavor: "Top of the ladder. His Hemi 'Cuda IS the crown. One race. Everything." },
 ];
 
-export const STARTING_MONEY = 350;
+export const STARTING_MONEY = 2400;
 export const SAVE_KEY = "streetrod86-save-v1";

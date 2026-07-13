@@ -2,7 +2,8 @@
 // States: TITLE -> GARAGE <-> OPPONENTS -> RACE -> RESULTS -> GARAGE
 
 import * as THREE from "three";
-import { CAR_TIERS, PARTS, PART_KEYS, STREET_RACERS, RACER_COLORS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
+import { CAR_TIERS, PARTS, PART_KEYS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
+import { makeRoster, aiParts, carSaleValue, partPrice, freshParts, wagerLoss } from "./economy.js";
 import { buildCar } from "./carmesh.js";
 import { Track, PALETTES, ROAD_HALF_W } from "./track.js";
 import { CarSim, effectiveStats, topSpeed, resolveContact, resolveDraft, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
@@ -39,7 +40,7 @@ function disposeScene(scene) {
 let player = load() ?? {
   money: STARTING_MONEY,
   carTier: 0,
-  parts: { engine: 0, induction: 0, exhaust: 0, tires: 0, gearbox: 0 },
+  parts: freshParts(),
   bossesBeaten: 0,
 };
 
@@ -60,13 +61,6 @@ function soundSpec(tier, parts) {
 }
 
 // Resale value of the current car incl. a cut of the parts bolted on.
-function carSaleValue() {
-  let partsSpent = 0;
-  for (const k of PART_KEYS) {
-    for (let l = 1; l <= (player.parts[k] ?? 0); l++) partsSpent += PARTS[k].levels[l].price;
-  }
-  return Math.round(playerTier().value + partsSpent * 0.4);
-}
 
 // ---------------------------------------------------------------- input
 
@@ -162,8 +156,9 @@ function buyPart(key) {
   const cur = player.parts[key] ?? 0;
   const next = PARTS[key].levels[cur + 1];
   if (!next) { sfx.beep(180, 0.15, "square", 0.08); return; }
-  if (player.money < next.price) { sfx.beep(180, 0.2, "sawtooth", 0.1); return; }
-  player.money -= next.price;
+  const price = partPrice(key, cur + 1, player.carTier);
+  if (player.money < price) { sfx.beep(180, 0.2, "sawtooth", 0.1); return; }
+  player.money -= price;
   player.parts[key] = cur + 1;
   save();
   sfx.cashSound();
@@ -241,6 +236,7 @@ function renderGaragePanel() {
   PART_KEYS.forEach((key, i) => {
     const cur = player.parts[key] ?? 0;
     const next = PARTS[key].levels[cur + 1];
+    const price = next ? partPrice(key, cur + 1, player.carTier) : 0;
     const row = document.createElement("div");
     row.className = "partRow" + (i === garageSel ? " sel" : "");
     const pips = PARTS[key].levels.slice(1).map((_, j) =>
@@ -249,7 +245,7 @@ function renderGaragePanel() {
       <div class="pName">${PARTS[key].label}<span class="pips">${pips}</span></div>
       <div class="pLevel">${PARTS[key].levels[cur].n}</div>
       ${next
-        ? `<div class="pNext">&rarr; ${next.n} &mdash; $${next.price}${player.money < next.price ? ' <span class="short">(short on cash)</span>' : ""}</div>`
+        ? `<div class="pNext">&rarr; ${next.n} &mdash; $${price}${player.money < price ? ' <span class="short">(short on cash)</span>' : ""}</div>`
         : `<div class="pMax">MAXED OUT</div>`}`;
     row.onclick = () => { garageSel = i; renderGaragePanel(); };
     list.appendChild(row);
@@ -277,81 +273,9 @@ function renderGaragePanel() {
 
 let roster = [], rosterIdx = 0, cardEl = null;
 
-function makeRoster() {
-  const tier = player.carTier;
-  // Crown: the King is beaten and the 'Cuda is yours, so the ladder is over.
-  // Nobody brings a stock car to race the champ — the street sends its best,
-  // built to the teeth, and the money on the hood goes up to match.
-  const crown = tier === 6;
-  const names = [...STREET_RACERS].sort(() => Math.random() - 0.5);
-  const colors = [...RACER_COLORS].sort(() => Math.random() - 0.5);
-  roster = [];
-  for (let i = 0; i < 4; i++) {
-    const skill = crown ? 0.5 + Math.random() * 0.5 : 0.2 + Math.random() * 0.6;
-    // aiParts compensates a lesser car with extra part levels, but can't strip
-    // parts below stock — so the better-car draw is reserved for 3★+ drivers
-    // (a 2★ in a +1-tier car would outrun their star label)
-    let bump = [0, 0, -1, 1][Math.floor(Math.random() * 4)];
-    if (bump === 1 && skill < 0.55) bump = 0;
-    const carTier = Math.max(0, Math.min(6, tier + bump));
-    let wager = crown
-      ? Math.round((300 + skill * 800 + carTier * 60) / 25) * 25
-      : Math.round((40 + skill * 220 + carTier * 60) / 25) * 25;
-    wager = Math.min(wager, Math.max(25, player.money)); // never dangle a bet you can't cover
-    roster.push({
-      name: names[i].name, flavor: names[i].flavor,
-      carTier, skill, wager, boss: false, crown, carColor: colors[i],
-      partBoost: Math.random() < skill ? 1 : 0,
-      // how hard he leans back when you lean on him (ai.js). Rolled independent
-      // of skill on purpose: a 2★ can be a bruiser and a 5★ can be clean, so
-      // racecraft is a personality you learn per name, not a second star bar.
-      aggro: 0.25 + Math.random() * 0.75,
-    });
-  }
-  // The crown roster always fields one true peer: 5★, a 'Cuda of his own, and
-  // every part maxed. The random crown draw alone can hand you a board of 3★
-  // bolt-on cars, and a maxed 'Cuda has nothing to prove against those — so one
-  // slot is reserved for the race the endgame is actually for. He is the biggest
-  // purse on the board, and the card shows him honestly: five lit stars, full
-  // pips, blower and slicks in the portrait.
-  if (crown) {
-    const ringer = roster[Math.floor(Math.random() * roster.length)];
-    ringer.skill = 1;
-    ringer.carTier = 6;
-    ringer.parts = Object.fromEntries(PART_KEYS.map((k) => [k, 3])); // aiParts honors a pre-set build
-    ringer.partBoost = 0; // nothing left to boost
-    ringer.wager = Math.min(
-      Math.round((300 + 800 + 6 * 60) / 25) * 25,
-      Math.max(25, player.money),
-    );
-  }
-  // a freebie so being broke never soft-locks the game
-  if (player.money < 25) {
-    roster[0] = {
-      name: "Free-Ride Freddy", flavor: "Races for the love of it. Slips you gas money if you win.",
-      // freebie: exempt from the tier-deficit parts baseline in aiParts —
-      // the mercy run stays a stock lesser car so broke never means stuck
-      freebie: true,
-      carTier: Math.max(0, tier - 1), skill: 0.25, wager: 0, prize: 100, boss: false, partBoost: 0,
-      aggro: 0.2, // races for the love of it — he'll give you the room
-      carColor: 0x8a8a82, // primer gray — he races for love, not paint
-    };
-  }
-  roster.sort((a, b) => a.skill - b.skill);
-  if (tier < 6) {
-    const b = BOSSES[tier];
-    roster.push({
-      name: b.name, flavor: b.flavor,
-      carTier: tier + 1, skill: 0.8 + tier * 0.03, wager: 0, boss: true, partBoost: 1,
-      aggro: 1, // your car is on the hood: he will not give you an inch
-      carColor: 0xff4fa3, // bosses are pink, always
-    });
-  }
-}
-
 states.OPPONENTS = {
   enter() {
-    makeRoster();
+    roster = makeRoster(player);
     rosterIdx = 0;
     show("opponentScreen");
     cardEl = null;
@@ -368,7 +292,8 @@ states.OPPONENTS = {
     if (code === "Escape") { sfx.uiTick(); go("GARAGE"); }
     if (code === "Enter") {
       const opp = roster[rosterIdx];
-      if (!opp.boss && opp.wager > player.money) { sfx.beep(180, 0.2, "sawtooth", 0.1); return; }
+      // no cash check: the purse has a floor, and you can never forfeit more
+      // than you're carrying (wagerLoss) — so a thin wallet is never a locked door
       sfx.uiSelect();
       go("RACE", opp);
     }
@@ -414,7 +339,7 @@ function carPortrait(tierIdx, color, parts) {
 function cardHTML(opp) {
   const stars = Math.max(1, Math.round(opp.skill * 5));
   const carName = CAR_TIERS[opp.carTier].name;
-  const build = aiParts(opp);
+  const build = aiParts(opp, player);
   const buildRows = PART_KEYS.map((k) => {
     const lvl = build[k] ?? 0;
     const boxes = [0, 1, 2].map((j) =>
@@ -491,45 +416,6 @@ states.RACE = {
   },
 };
 
-function aiParts(opp) {
-  // Stars are the promise: since straights went flat-out for every skill,
-  // driver skill is worth <1 s/race — parts are the real difficulty lever.
-  // Street builds run stars−2 part levels (1–2★ stock, 3★ bolt-ons, 4★ a
-  // genuinely built car), and one tier of lesser iron buys one extra level —
-  // in this data one tier ≈ one part level almost exactly, so a hot-rodded
-  // Model A honestly matches its star label against Deuce-class company.
-  // Bosses keep their own formula: always a properly built machine.
-  // The tier bump is a baseline, not a bonus (Jason, 2026-07-11): the stars
-  // term floors at 0 and the per-part jitter floors at the deficit, so even
-  // a 1★ in lesser iron shows up upgraded to the player-tier stock pace —
-  // never a free win just because the draw handed them an older car.
-  // Memoized: the card shows this build, so it has to be the one that races.
-  // Crown racers (post-King) use their own curve: nothing stock ever shows up
-  // to race the champ. 3★ arrives with bolt-ons everywhere, 4–5★ with a fully
-  // built car — and the −1 jitter/partBoost decide which of them is maxed out.
-  if (opp.parts) return opp.parts;
-  const deficit = opp.freebie ? 0 : player.carTier - opp.carTier;
-  const lvl = opp.boss
-    ? Math.min(3, 1 + Math.round(opp.skill))
-    : opp.crown
-      ? Math.min(3, 1 + Math.round(opp.skill * 2) + deficit)
-      : Math.max(0, Math.round(opp.skill * 5) - 2) + deficit;
-  const floor = opp.boss ? 0 : Math.max(opp.crown ? 1 : 0, deficit);
-  // The jitter is what leaves a car a part short of its class. Out on the street
-  // that's flavor, but in the crown era it fades with skill: a 5★ challenger
-  // arrives with the car actually finished, not one carb short of it.
-  const jitter = opp.crown ? 0.4 * (1 - opp.skill) : 0.4;
-  const p = {};
-  for (const k of PART_KEYS) p[k] = Math.max(floor, Math.min(3, lvl + (Math.random() < jitter ? -1 : 0)));
-  if (!opp.boss && opp.partBoost) {
-    // their one pride part — Donna really did rebuild that motor
-    const k = PART_KEYS[Math.floor(Math.random() * PART_KEYS.length)];
-    p[k] = Math.min(3, p[k] + 1);
-  }
-  opp.parts = p;
-  return p;
-}
-
 function buildRaceScene(opp) {
   if (scene) disposeScene(scene);
   const palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
@@ -550,7 +436,7 @@ function buildRaceScene(opp) {
   track.buildMeshes(scene, palette);
 
   const pStats = effectiveStats(playerTier(), player.parts);
-  const oppParts = aiParts(opp);
+  const oppParts = aiParts(opp, player);
   const aiTierData = CAR_TIERS[opp.carTier];
   const aStats = effectiveStats(aiTierData, oppParts);
 
@@ -748,14 +634,14 @@ states.RESULTS = {
 
     if (opp.boss) {
       if (won) {
-        const sale = carSaleValue();
+        const sale = carSaleValue(player);
         const newTier = CAR_TIERS[opp.carTier];
         html += `${opp.name} slaps the pink slip in your hand.<br>` +
           `The <span class="pink">${newTier.name}</span> is yours.<br>` +
           `Your old ${playerTier().short} sells for <span class="money">$${sale}</span>.`;
         player.money += sale;
         player.carTier = opp.carTier;
-        player.parts = { engine: 0, induction: 0, exhaust: 0, tires: 0, gearbox: 0 };
+        player.parts = freshParts();
         player.bossesBeaten++;
         sfx.cashSound();
       } else {
@@ -763,7 +649,7 @@ states.RESULTS = {
           `Your <span class="pink">${playerTier().name}</span> is gone.<br>` +
           `The junkyard man takes pity — there's a rusty Model A out back with your name on it.`;
         player.carTier = 0;
-        player.parts = { engine: 0, induction: 0, exhaust: 0, tires: 0, gearbox: 0 };
+        player.parts = freshParts();
         sfx.loseSound();
       }
     } else {
@@ -773,9 +659,10 @@ states.RESULTS = {
         html += `You take ${opp.name} for <span class="money">$${stake}</span>.`;
         sfx.cashSound();
       } else {
-        player.money = Math.max(0, player.money - stake);
-        html += stake > 0
-          ? `${opp.name} pockets your <span class="money">$${stake}</span> and grins.`
+        const lost = wagerLoss(player, stake);
+        player.money -= lost;
+        html += lost > 0
+          ? `${opp.name} pockets your <span class="money">$${lost}</span> and grins.`
           : `${opp.name} wins nothing but bragging rights. Somehow that's worse.`;
         sfx.loseSound();
       }
