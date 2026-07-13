@@ -47,6 +47,38 @@ const LEAN_HOLD = 0.35;    // s the lean outlives the contact that triggered it
 const LEAN_MAX = 0.38;     // fraction of steering lock he'll hold into you
 const LEAN_SPARE = 2.4;    // m of road he leaves you before he stops leaning
 
+// Hunting the wake (see the drafting entry in CLAUDE.md). A driver behind you on
+// a straight moves over into your tow, rides it up to your bumper, then steps out
+// and slingshots past. Unlike leanBack this really *is* a lane offset, and that's
+// legitimate: lining up with a wake is a multi-metre lateral move, far above the
+// keyboard deadband that made a 1 m lean bias a no-op.
+//
+// Skill is the whole difficulty knob: it scales the pressure he puts into lining
+// up, and since that pressure has to clear his own keyboard deadband to exist at
+// all, it *self-limits* — a 1-star pushes toward the dirty air until the last
+// metre or so falls under his deadband and he stops, collecting a fraction of the
+// tow; a 5-star squares up behind you and takes all of it. That falloff is the
+// mechanic, not a tuned curve.
+//
+// Learned the hard way (twice now — see leanBack): this CANNOT be a lane bias.
+// Biasing the pursuit aim lane toward your wake looks right and measures as a
+// literal no-op, because at a racing lookahead of ~46 m a 2 m lateral error is
+// only ~0.11 of steer — under the 0.12 re-press deadband. Steering pressure with
+// its own short aim distance (WAKE_AIM) is what actually reaches the keyboard.
+// WAKE_MIN is only "we're basically touching, let the contact model have it" —
+// it must NOT be set at bumper range. The tow is strongest right behind you, so
+// that is exactly where he has to keep holding station; an earlier cut-off at 6 m
+// made him find the wake and then abandon it the moment it started paying.
+const WAKE_MIN = 2;         // m — below this they're in contact, not drafting
+const WAKE_MAX = 26;        // m — base reach; skill adds the run-up below
+const WAKE_APPROACH = 20;   // extra m of run-up a good driver uses to line up early
+const WAKE_STRAIGHT = 6e-4; // curvature above which the racing line beats the tow
+const WAKE_AIM = 12;        // m — he lines up with a short deliberate look at the car
+                            // ahead, NOT through his long racing lookahead (see above)
+const WAKE_STEER_MAX = 0.45; // fraction of lock: a move across, never a swerve
+const SLINGSHOT = 6;        // m gap inside which, with a run on you, he pulls out
+const SLINGSHOT_OUT = 2.8;  // m he steps aside to make the pass
+
 export class AIDriver {
   constructor(car, track, skill, lanePreference = 2.5, aggression = 0.6) {
     this.car = car;
@@ -173,6 +205,12 @@ export class AIDriver {
     // holding it costs only occasional small trims (Jason's wobble fix #2)
     const wobble = (1 - this.skill) * Math.sin(this.t * 0.4 + this.wobblePhase) * 0.5;
     let lane = line * this.lineWeight + this.lane * (1 - this.lineWeight) + wobble;
+    // ...and if there's a tow on this straight, he aims at it instead of his line.
+    // This is NOT what makes him move over (that's the pressure term below, which
+    // is the only part his keyboard can feel) — it's what stops his own pursuit
+    // from fighting the move and holding him a couple of metres wide of the tow.
+    const wk = this.wake(player);
+    if (wk) lane = lane * (1 - wk.commit) + wk.lane * wk.commit;
     lane = Math.max(-(ROAD_HALF_W - 1.6), Math.min(ROAD_HALF_W - 1.6, lane));
     const nx = Math.cos(target.heading), nz = -Math.sin(target.heading);
     const tx = target.pos.x + nx * lane, tz = target.pos.z + nz * lane;
@@ -184,7 +222,9 @@ export class AIDriver {
     // ...plus the lean: pressure held into whoever is leaning on him. It rides
     // on top of the pursuit want, so in a corner the line still gets driven —
     // he leans while racing, he doesn't abandon the corner to fight you.
-    const steerWant = Math.max(-1, Math.min(1, dh * 2.4 + this.leanBack(dt, player)));
+    // ...plus the wake: pressure toward the tow of the car ahead, on straights.
+    const steerWant = Math.max(-1, Math.min(1,
+      dh * 2.4 + this.leanBack(dt, player) + this.wakeSteer(player)));
 
     // --- virtual keyboard: closed-loop key tapping ---
     // Press toward the wanted steer, release once past it — but the key
@@ -226,6 +266,63 @@ export class AIDriver {
     const brkKey = brake > 0.85 ? 1 : brake < 0.12 ? 0 : pPhase < brake ? 1 : 0;
 
     return { throttle: thrKey, brake: brkKey, steer: this.steer };
+  }
+
+  // Where the tow is and how hard he's willing to go get it — or, once he has a
+  // run on you, where to step out to and pass. null when there's no tow worth
+  // chasing, and he just races his own line.
+  //
+  // Deliberately straight-line only: through a corner the racing line is worth
+  // more than the tow, and chasing a wake through a bend only drives him off the
+  // line and into the scrub terms. Real drivers draft on the straights; so does he.
+  wake(player) {
+    if (!player || player.finished || this.car.finished || this.skill <= 0) return null;
+    const gap = player.trackDist - this.car.trackDist; // + = you're ahead of him
+    const reach = WAKE_MAX + WAKE_APPROACH * this.skill; // good drivers see it coming
+    if (gap < WAKE_MIN || gap > reach) return null;
+    // Is the road ahead straight enough to be worth a tow? Scan the whole stretch
+    // he'd be committed through, not a single point: sampling one spot a half-
+    // second ahead let a fast car commit to the wake lane on the last of a
+    // straight and then arrive at the corner off its line (measured — it doubled
+    // the boss's time in the dirt). The most binding curvature in the window wins.
+    let k = 0;
+    for (let ahead = this.car.speed * 0.4; ahead <= this.car.speed * 1.6; ahead += 15) {
+      k = Math.max(k, this.track.curvatureAt(this.car.trackDist + ahead));
+    }
+    const straight = Math.max(0, 1 - k / WAKE_STRAIGHT);
+    if (straight <= 0) return null;
+
+    let lane = player.lateral; // the hole in the air: square up behind him
+    // The slingshot. Once he's on your bumper with a run on you, he pulls out of
+    // the tow and goes by. Without this he'd ride your wake to the finish line —
+    // the draft would make him *follow* better instead of *race* better.
+    if (gap < SLINGSHOT && this.car.speed > player.speed + 0.5) {
+      lane = player.lateral + (player.lateral > 0 ? -1 : 1) * SLINGSHOT_OUT; // roomier side
+    }
+    // Commitment fades with distance as well as skill. Without the distance term
+    // he mirrors your every lane change from 45 m back like a duckling — which is
+    // shadowing, not drafting. Far out he only leans toward the tow; on your
+    // bumper, where the tow is actually worth something, he commits to it.
+    const near = 1 - Math.min(1, (gap - WAKE_MIN) / (reach - WAKE_MIN));
+    const commit = straight * (0.25 + 0.75 * this.skill) * (0.35 + 0.65 * near);
+    return { lane, commit };
+  }
+
+  // Steering pressure (fraction of lock) toward the tow. This rides on top of the
+  // pursuit want, and it is the half that actually reaches his hands: aiming the
+  // pursuit at the wake alone leaves the last couple of metres generating less
+  // steer than his re-press deadband, so he'd stall out wide of the tunnel (that
+  // version measured as a total no-op — see the note above the constants).
+  // Skill scales the pressure, and then the deadband does the rest for free: a
+  // weak driver's push falls under it while he's still a metre or two wide, so he
+  // wanders into the dirty air and never quite finds the clean tow. That falloff
+  // is the skill gradient — it isn't tuned, it's the controller's own floor.
+  wakeSteer(player) {
+    const wk = this.wake(player);
+    if (!wk) return 0;
+    const err = wk.lane - this.car.lateral; // + = the tow is to his left
+    const push = Math.max(-WAKE_STEER_MAX, Math.min(WAKE_STEER_MAX, (err / WAKE_AIM) * 2.4));
+    return push * wk.commit;
   }
 
   // Steering pressure (fraction of lock) held *into* a car leaning on him.

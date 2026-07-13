@@ -253,12 +253,57 @@ sound is synthesized live with the Web Audio API.
   Balance is untouched because drafting is **opt-in**: 16-seed A/B with a
   flat-out human proxy (which doesn't chase the tow) moved the margin over the AI
   by ≤0.4 s, and only in the races where the cars are close enough to use it.
-  The AI gets the tow too — it's a pair function, and a trailing AI on your
-  bumper is real — but it has **no draft-seeking logic**: it drives its racing
-  line and takes the tow when the line happens to put it there. If it should
-  ever hunt the wake, that's `AIDriver`, not physics. The HUD `#draft` readout
+  The HUD `#draft` readout
   exists because the wake is invisible: the tow is the one speed source with no
   on-screen cause, so without it a player just sees the speedo climb.
+- **The AI hunts your wake, and skill is the knob** (Jason's ask, 2026-07-12,
+  straight after drafting shipped). `AIDriver.wake()` finds the tow on a straight
+  and `wakeSteer()` puts pressure toward it; he moves across, rides it up to your
+  bumper, then **slingshots** out and passes (`SLINGSHOT`: inside 6 m with a speed
+  run on you, the aim lane steps `SLINGSHOT_OUT` to the roomier side — without it
+  he'd ride your wake to the finish, and the draft would make him *follow* better
+  instead of *race* better). Traced at boss skill: lateral 3.0 → −3.9 in 1.5 s,
+  draft 0.62 at 9 m back, 94 → 110 mph while the player is pinned at 94, pull out,
+  by. Five load-bearing findings, four of them mistakes measurement caught:
+  1. **It cannot be a lane bias — this is the deadband trap, for the second time**
+     (see the `leanBack` entry, which says the same thing). Biasing the pursuit aim
+     lane into your wake reads perfectly and measures as a *literal no-op*: at a
+     racing lookahead of ~46 m, a 2 m lateral error is only ~0.11 of steer, under
+     his own 0.12 re-press deadband, so his keyboard never sees it and he stalls
+     out wide of the tunnel. It needs **pressure** through a short aim distance
+     (`WAKE_AIM` 12 m). Any future "nudge the AI" feature hits this floor.
+  2. But pressure **alone** leaves him fighting himself — his pure-pursuit keeps
+     restoring him to his racing line, and he settles ~2 m wide (tow 0.15). So the
+     aim lane *also* shifts (`wake().commit`). The lane shift isn't what moves him;
+     it's what stops his own pursuit from opposing the move. Both halves, or neither.
+  3. Skill scales the pressure and then **the deadband does the gradient for free**:
+     a weak driver's push falls under his own re-press floor while he's still a
+     couple of metres wide, so he wanders into the dirty air and never finds the
+     clean tow. Measured (player holding a lane off the racing line; tow / metres
+     off your line): hunting off = **0.00 at every skill** (3.4–5.8 m wide, he
+     never finds it at all); on = 1★ 0.10/3.3 m, 2★ 0.22/2.3, 3★ 0.26/1.8,
+     4★ 0.27/1.3, 5★-boss 0.29/0.9. The falloff is the controller's own floor,
+     not a tuned curve.
+  4. Commitment must **fade with distance**, not just skill. Without that a 5★
+     mirrors your every lane change from 45 m back like a duckling — shadowing,
+     not drafting — and it measurably distorted the ladder (a 4★ came 4.5 s
+     closer). Far out he leans toward the tow; on your bumper he commits.
+  5. The straight gate scans the **whole stretch he'd be committed through**
+     (`speed*0.4 … speed*1.6`), not one point. A single sample a half-second ahead
+     let a fast car commit to the wake lane on the last of a straight and arrive at
+     the corner off its line — it doubled the boss's time in the dirt (2.4 → 4.2
+     s/race). Drafting is a straight-line move; in a corner the line is worth more.
+  Balance: the ladder is intact and unmoved (≤0.2 s in every street cell, both for
+  a player on the racing line and one holding a lane). The **boss race tightens**:
+  a maxed 'Cuda still wins, but by +2.8 s instead of +5.4 s against a player on the
+  line, because the boss is the one opponent good enough to use your tow properly.
+  That's the intended shape of the feature, but it is the third change in a row to
+  tighten the boss margin — if he ever becomes unbeatable, the planning grip in
+  `ai.js` is still the first knob.
+  Note it only matters when you're **off the racing line**: if you drive the line,
+  the AI is already near it and picks up the tow incidentally, so hunting measures
+  as a no-op there (which is why the first A/B looked like a failure — the flat-out
+  human proxy drives a perfect line, and a real player doesn't).
 - Camera drama comes from **acceleration, not speed**: framing follows the
   smoothed `race.camSpeed`, and a small accel-driven FOV kick (+6°/−3° max)
   handles launches/braking. Keep zooms subtle — Jason gets seasick from big
