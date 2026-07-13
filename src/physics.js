@@ -57,7 +57,12 @@ const SLIP_THROTTLE_HOLD = 0.92; // how much of the slip recovery a lit throttle
 // which is the whole point: sit in the tow, then pull out and go by.
 // The tunnel starts behind the leader's tail (you can't draft from alongside)
 // and is about a car wide, so you have to actually line up in it.
-const DRAFT_LEN = 24;      // m behind the leader where the tow runs out
+// Its LENGTH is a time, not a distance (Jason, 2026-07-13: a fixed 24 m was
+// ~0.35 s of gap at 150 mph — too short to catch a car down a long straight):
+// the wake is the leader's last DRAFT_TAIL_T seconds of travel, floored at
+// DRAFT_LEN so slow traffic keeps the old fixed tunnel (they cross at ~60 mph).
+const DRAFT_LEN = 24;      // m — floor on the wake length (rules below ~60 mph)
+const DRAFT_TAIL_T = 0.9;  // s of the leader's travel the wake trails at speed
 const DRAFT_MIN = 3.5;     // m — closer than this you're on his bumper, not in his wake
 const DRAFT_HALF_W = 1.3;  // m of lateral offset that still sits in the clean tunnel
 const DRAFT_FADE_W = 2.0;  // m past that where the tow fades to nothing
@@ -348,6 +353,13 @@ export class CarSim {
   }
 }
 
+// How far behind the leader his wake still tows (m). Speed-scaled — see the
+// DRAFT_TAIL_T note above. The AI's wake hunt imports this so the reach he
+// chases always matches the tunnel physics actually grants.
+export function draftLength(speed) {
+  return Math.max(DRAFT_LEN, speed * DRAFT_TAIL_T);
+}
+
 // Slipstream. Symmetric pair check — whoever is behind gets the tow, so the AI
 // drafts you back on the next straight if you leave the door open. The wake
 // trails the leader's *travel* direction, not his nose, so a car hanging
@@ -359,8 +371,9 @@ export function resolveDraft(a, b, dt) {
     const dx = car.x - lead.x, dz = car.z - lead.z;
     const back = -(dx * Math.sin(dir) + dz * Math.cos(dir));      // m behind the leader
     const side = Math.abs(dx * Math.cos(dir) - dz * Math.sin(dir)); // m off his line
-    if (back < DRAFT_MIN || back > DRAFT_LEN) return 0;
-    const along = 1 - (back - DRAFT_MIN) / (DRAFT_LEN - DRAFT_MIN); // strongest on his bumper
+    const len = draftLength(lead.speed);
+    if (back < DRAFT_MIN || back > len) return 0;
+    const along = 1 - (back - DRAFT_MIN) / (len - DRAFT_MIN); // strongest on his bumper
     const lat = 1 - Math.max(0, side - DRAFT_HALF_W) / DRAFT_FADE_W;
     return Math.max(0, along) * Math.max(0, Math.min(1, lat));
   };

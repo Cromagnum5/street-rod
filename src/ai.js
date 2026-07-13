@@ -14,7 +14,7 @@
 // grip limit it plans — not in a lifted throttle.
 
 import { ROAD_HALF_W } from "./track.js";
-import { POWER_GRIP_FLOOR, CONTACT_END, CONTACT_R } from "./physics.js";
+import { POWER_GRIP_FLOOR, CONTACT_END, CONTACT_R, draftLength } from "./physics.js";
 
 // Racecraft: how the driver reacts to a car leaning on him. He does not swerve
 // at you and he does not block — he simply refuses to be moved, holding a little
@@ -70,7 +70,8 @@ const LEAN_SPARE = 2.4;    // m of road he leaves you before he stops leaning
 // that is exactly where he has to keep holding station; an earlier cut-off at 6 m
 // made him find the wake and then abandon it the moment it started paying.
 const WAKE_MIN = 2;         // m — below this they're in contact, not drafting
-const WAKE_MAX = 26;        // m — base reach; skill adds the run-up below
+// Base reach is the tunnel physics actually grants — draftLength(leader speed),
+// speed-scaled, so when the wake stretches at speed the hunt stretches with it.
 const WAKE_APPROACH = 20;   // extra m of run-up a good driver uses to line up early
 const WAKE_STRAIGHT = 6e-4; // curvature above which the racing line beats the tow
 const WAKE_AIM = 12;        // m — he lines up with a short deliberate look at the car
@@ -396,7 +397,7 @@ export class AIDriver {
   wake(player) {
     if (!player || player.finished || this.car.finished || this.skill <= 0) return null;
     const gap = player.trackDist - this.car.trackDist; // + = you're ahead of him
-    const reach = WAKE_MAX + WAKE_APPROACH * this.skill; // good drivers see it coming
+    const reach = draftLength(player.speed) + WAKE_APPROACH * this.skill; // good drivers see it coming
     if (gap < WAKE_MIN || gap > reach) return null;
     // Is the road ahead straight enough to be worth a tow? Scan the whole stretch
     // he'd be committed through, not a single point: sampling one spot a half-

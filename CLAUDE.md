@@ -337,11 +337,27 @@ sound is synthesized live with the Web Audio API.
   drag is the only force that goes as v², so the tow is worth nothing at 30 mph
   and everything at 150. That also means it can carry you **past your own
   vmax**, which is the entire move: sit in it, then pull out and go by. Measured
-  on the bumper (5 m): Model A 74.5 → 85.8 mph, Bel Air 123 → 138.8, maxed 'Cuda
-  277 → 320 — about +15% top speed at every tier, so it never becomes a
+  on the bumper (5 m): Model A 74.5 → 87.2 mph, Bel Air stock 106.7 → 124, maxed
+  'Cuda 277 → 329 — about +15% top speed at every tier, so it never becomes a
   low-tier-only crutch or a high-tier-only toy.
+  **The wake's length is a time, not a distance** (Jason, 2026-07-13: the
+  original fixed 24 m was ~0.35 s of gap at 150 mph — too short to ever catch a
+  car down a long straight). `draftLength(speed)` = the leader's last
+  `DRAFT_TAIL_T` 0.9 s of travel, floored at `DRAFT_LEN` 24 m, so nothing
+  changes below ~60 mph and above it the tunnel stretches: ~30 m behind a
+  Model A, ~43 m behind a Bel Air, ~112 m behind a maxed 'Cuda (still a tow at
+  100 m back — 281 vs 277 mph base, ramping to +51 on the bumper).
+  `AIDriver.wake()` imports `draftLength` for its hunt reach (replacing a fixed
+  `WAKE_MAX` 26 m) so he chases exactly the tow physics grants — at 'Cuda
+  speeds a 5★ starts leaning toward your lane from ~130 m back on straights;
+  the distance-fading commit keeps that a lean, not duckling-shadowing.
+  Balance A/B (16 seeds, flat-out proxy, full race loop with contact + draft):
+  street cells moved ≤0.04 s; the **boss tightened 0.30 s** (draft peak
+  0.80 → 0.98 — he's the one driver good enough to work the longer tow; worst
+  seed still a 0.95 s player win, 16/16). That's the fifth boss tightening in
+  a row — same knobs as ever if he goes over.
   The tunnel starts *behind the leader's tail* (`DRAFT_MIN` 3.5 m — you cannot
-  draft from alongside), runs out by `DRAFT_LEN` 24 m, and is about a car wide
+  draft from alongside) and is about a car wide
   (`DRAFT_HALF_W` 1.3, fading to nothing 2 m further out), so you have to line up
   in it: at 8 m back the gain is +9.1 mph on his line, +5.5 one metre off it,
   +1.1 at three. It trails his **travel** direction, not his nose, so a car
