@@ -57,15 +57,18 @@ function wheel(radius, width, whitewall, hubF) {
   const g = new THREE.Group();
   const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 14), TIRE);
   tire.rotation.z = Math.PI / 2;
+  tire.castShadow = true;
   g.add(tire);
   if (whitewall) {
     const wall = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.55, radius * 0.55, width + 0.015, 14),
       new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }));
     wall.rotation.z = Math.PI / 2;
+    wall.castShadow = true;
     g.add(wall);
   }
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * hubF, radius * hubF, width + 0.03, 10), HUB);
   hub.rotation.z = Math.PI / 2;
+  hub.castShadow = true;
   g.add(hub);
   return g;
 }

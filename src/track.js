@@ -311,7 +311,9 @@ export class Track {
     roadGeo.setAttribute("position", new THREE.Float32BufferAttribute(roadPos, 3));
     roadGeo.setIndex(roadIdx);
     roadGeo.computeVertexNormals();
-    scene.add(new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ color: 0x3a3a3e })));
+    const road = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ color: 0x3a3a3e }));
+    road.receiveShadow = true;
+    scene.add(road);
 
     // Edge lines + center dashes as instanced quads
     const dashGeo = new THREE.PlaneGeometry(0.35, 4);
@@ -369,11 +371,14 @@ export class Track {
     skGeo.setAttribute("position", new THREE.Float32BufferAttribute(skPos, 3));
     skGeo.setIndex(skIdx);
     skGeo.computeVertexNormals();
-    scene.add(new THREE.Mesh(skGeo, groundMat));
+    const skirt = new THREE.Mesh(skGeo, groundMat);
+    skirt.receiveShadow = true;
+    scene.add(skirt);
 
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.08;
+    ground.receiveShadow = true;
     const mid = this.sample(this.length / 2).pos;
     ground.position.x = mid.x; ground.position.z = mid.z;
     scene.add(ground);

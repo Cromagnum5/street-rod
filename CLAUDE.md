@@ -389,6 +389,33 @@ sound is synthesized live with the Web Audio API.
   blown 4★ shows up on his card with a blower and the pips match the photo (the
   portrait cache key had to grow from tier+color to tier+color+build). Same
   spirit as "upgraded opponents sound built": now they look it.
+- **Shadows: the cars cast, the world receives** (Jason playtested + approved
+  2026-07-16, "frame rate fine, it looks great"). The `castShadow` flags in
+  carmesh.js had been **dead since the first commit** — set on every `box()` and
+  `wedge()`, but nothing ever enabled `renderer.shadowMap` and no light cast, so
+  the cars floated over the asphalt for the life of the project. Now the race sun
+  casts and the road / terrain skirt / ground plane receive; in the garage the
+  key PointLight casts onto the floor and turntable (deliberately still a point
+  light, not a spot — a cone would change the shop's whole look, and it's a menu
+  screen rendering one low-poly car). `wheel()` needed flags of its own: the
+  originals covered only the two primitives, so the tires cast nothing.
+  **Nothing in track.js is flagged, and that's load-bearing.** With only two
+  casters the shadow map is nearly empty, which is what lets `aimSun` follow the
+  pair with a tight ortho box instead of covering 3 km of road. It sizes itself
+  to take the AI in and lets him drop out past `SHADOW_MAX` 90 m (he's beyond the
+  fog start anyway). The half-extent is *quantized* (`SHADOW_STEP`) so the texel
+  size doesn't breathe frame to frame, and the focus is snapped to that texel
+  grid so the shadow edge doesn't crawl as the car moves. Flagging the trees
+  would buy back both the fill cost and the crawl on static geometry — think
+  before doing it.
+  **Sharpness is free, measured** (swiftshader, stationary car, ms/frame): off
+  107, 2048 soft 180, 2048 pcf 176, 1024 soft 190, 512 soft 188. Flat across
+  every map size and both filters — the cost is not shadow-map fill and not PCF
+  taps, it's the fixed cost of the shadow path existing in the fragment shader at
+  all. So 2048 + `PCFSoftShadowMap` is the right pick, not a luxury; shrinking
+  the map buys nothing. (Absolute ms is software raster and says nothing about a
+  real GPU — Jason's playtest is what cleared the frame rate, same as the audio
+  rule: some things only his machine can answer.)
 - **Drafting** (Jason's ask, 2026-07-12: "I want to be able to draft the car in
   front of me and pick up speed"). `resolveDraft` in physics.js is a symmetric
   pair check: whoever is behind gets `car.draft` 0..1, and `step` spends it as a
@@ -1115,6 +1142,21 @@ cornering-scrub and finish-teleport numbers precisely.
   so a triangle is correctly wound iff its normal points away from the
   prism's centroid — that check said 72 of 112 triangles faced inward before
   the fix, 0 after. Write that check before trusting a mesh render.
+- **`renderer.info` cannot see shadow cost.** `info.reset()` runs *after* the
+  shadow pass in `WebGLRenderer.render` (three.module.js:29600), so every shadow
+  draw call and triangle is wiped from the count before you can read it. An A/B
+  on `info.render.calls` with shadows on vs off measures nothing but scene
+  variation between the two sample windows — it read +3 calls / +45 triangles for
+  two entire cars, which is what gave the game away. Frame timing is the only
+  handle the smoke tests have on it, and under swiftshader that's software raster
+  (see the shadow entry: it exaggerates fill enormously). Same family as the
+  banner-mirror lesson — the obvious proxy was structurally blind to the thing
+  being measured.
+- Shadow maps are **render targets, not materials**, so `disposeScene`'s
+  geometry/material sweep never freed them — a 2048² map is ~16 MB leaked per
+  race scene, and a career is dozens of races. It now disposes
+  `light.shadow.map` explicitly. Any future per-scene render target needs the
+  same treatment; nothing else in the teardown path will catch it.
 - `/home/cromulon` briefly had a stray commit-less `.git` (deleted
   2026-07-10). If `git add -A` ever stages home-dir files again, stop —
   wrong repo root.

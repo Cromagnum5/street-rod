@@ -15,7 +15,13 @@ import * as sfx from "./audio.js";
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.getElementById("game").appendChild(renderer.domElement);
+// debug handle, same as __race. Note renderer.info can NOT see shadow cost:
+// info.reset() runs after the shadow pass, so those draws are wiped from the
+// count. Frame timing is the only handle the smoke tests have on it.
+window.__renderer = renderer;
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 6000);
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
@@ -25,6 +31,9 @@ addEventListener("resize", () => {
 
 function disposeScene(scene) {
   scene.traverse((o) => {
+    // shadow maps are render targets, not materials — nothing else here frees
+    // them, and a 2048² map per race scene is ~16 MB a leak
+    if (o.isLight && o.shadow?.map) { o.shadow.map.dispose(); o.shadow.map = null; }
     if (o.geometry) o.geometry.dispose();
     if (o.material) {
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
@@ -195,8 +204,17 @@ function buildGarageScene() {
   scene.background = new THREE.Color(0x0d0b12);
   scene.fog = new THREE.Fog(0x0d0b12, 14, 46);
   scene.add(new THREE.AmbientLight(0x8888aa, 0.5));
+  // the key casts: it's the light the eye already reads as the shop lamp, so the
+  // shadow lands where you expect. Left a PointLight (6 cube faces) rather than
+  // swapped for a spot — a spot's cone would change the look, and this is a menu
+  // screen rendering one low-poly car.
   const key = new THREE.PointLight(0xfff0d0, 160, 80);
   key.position.set(4, 6, 5);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 40;
+  key.shadow.normalBias = 0.02;
   scene.add(key);
   const fill = new THREE.PointLight(0x6688ff, 60, 60);
   fill.position.set(-6, 4, -4);
@@ -205,6 +223,7 @@ function buildGarageScene() {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60),
     new THREE.MeshPhongMaterial({ color: 0x1c1a22, shininess: 30 }));
   floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
   scene.add(floor);
   const grid = new THREE.GridHelper(60, 30, 0x333344, 0x22222e);
   grid.position.y = 0.01;
@@ -212,6 +231,7 @@ function buildGarageScene() {
   const plat = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.8, 0.2, 32),
     new THREE.MeshPhongMaterial({ color: 0x2e2a38, shininess: 60 }));
   plat.position.y = 0.1;
+  plat.receiveShadow = true;
   scene.add(plat);
 
   garageCarMesh = buildCar(playerTier(), { parts: player.parts });
@@ -394,6 +414,41 @@ function showCard(idx, dir) {
 const race = {};
 window.__race = race; // debug handle for the headless smoke tests
 const CAM_FOLLOW = 10; // chase-camera follow gain; steady-state trail = speed / CAM_FOLLOW
+
+// Shadows: only the cars cast (nothing in track.js is flagged), so the map only
+// ever holds two cars and the ortho box only has to cover them — that's what
+// buys sharp shadows off a single 2048 map over a 3 km track. The box follows
+// the pair; see aimSun.
+const SUN_DIR = new THREE.Vector3(0.4, 1, 0.3).normalize();
+const SUN_DIST = 150;
+const SHADOW_MAP = 2048;
+const SHADOW_STEP = 15; // box half-extents are quantized to this — see aimSun
+const SHADOW_MIN = 15, SHADOW_MAX = 90;
+
+// Aim the sun's shadow box at the player, sized to take the AI in with him.
+// Two things here are deliberate. The half-extent is *quantized* rather than
+// continuous, so the texel size holds still across frames instead of breathing;
+// and the focus is then snapped to that texel grid, so the map samples land on
+// the same spots frame to frame and the shadow edge doesn't crawl as the car
+// moves. (Snapping in world XZ rather than light space is an approximation, but
+// SUN_DIR is 88% vertical, so the two nearly coincide.)
+function aimSun(sun, p, ai) {
+  const gap = Math.hypot(p.x - ai.x, p.z - ai.z);
+  // past SHADOW_MAX the AI is beyond the fog start anyway, so let him drop out
+  // rather than blow the box out to cover a shadow nobody can see
+  const half = THREE.MathUtils.clamp(
+    Math.ceil((gap + 8) / SHADOW_STEP) * SHADOW_STEP, SHADOW_MIN, SHADOW_MAX);
+  const cam = sun.shadow.camera;
+  if (cam.right !== half) {
+    cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half;
+    cam.updateProjectionMatrix();
+  }
+  const texel = (2 * half) / SHADOW_MAP;
+  const fx = Math.round(p.x / texel) * texel, fz = Math.round(p.z / texel) * texel;
+  sun.target.position.set(fx, p.y, fz);
+  sun.position.set(fx + SUN_DIR.x * SUN_DIST, p.y + SUN_DIR.y * SUN_DIST, fz + SUN_DIR.z * SUN_DIST);
+}
+
 const tachoSegs = [];
 {
   const tacho = el("tacho");
@@ -430,8 +485,17 @@ function buildRaceScene(opp) {
   scene.fog = new THREE.Fog(palette.fog, 150, 1400);
   scene.add(new THREE.AmbientLight(0xffffff, palette.ambient));
   const sun = new THREE.DirectionalLight(palette.sun, 1.6);
-  sun.position.set(0.4, 1, 0.3);
-  scene.add(sun);
+  sun.position.copy(SUN_DIR);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+  // the box is aimed per-frame (aimSun); near/far only have to bracket the
+  // cars either side of the focus plane, which keeps the depth range tight
+  sun.shadow.camera.near = SUN_DIST - 100;
+  sun.shadow.camera.far = SUN_DIST + 100;
+  sun.shadow.normalBias = 0.02; // low-poly boxes, so this is what kills the acne
+  sun.shadow.bias = -0.0005;
+  scene.add(sun, sun.target); // target needs to be in the graph or it never updates
+  race.sun = sun;
   const hemi = new THREE.HemisphereLight(palette.sky, palette.ground, 0.5);
   scene.add(hemi);
 
@@ -568,6 +632,7 @@ function raceTick(t, dt) {
     const steerAng = (sim === p ? steer : race.aiSteer) * 0.35;
     wheels[0].rotation.y = steerAng; wheels[1].rotation.y = steerAng;
   }
+  aimSun(race.sun, p, ai);
 
   // ----- chase camera -----
   // follow the travel direction, not the nose: in a slide the car visibly
