@@ -46,7 +46,12 @@ let player = load() ?? {
 
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(player)); } catch {} }
 function load() {
-  try { return JSON.parse(localStorage.getItem(SAVE_KEY)); } catch { return null; }
+  try {
+    const p = JSON.parse(localStorage.getItem(SAVE_KEY));
+    // the whole economy moves in even $100s now; older saves carried $25 steps
+    if (p && typeof p.money === "number") p.money = Math.max(0, Math.round(p.money / 100) * 100);
+    return p;
+  } catch { return null; }
 }
 
 const playerTier = () => CAR_TIERS[player.carTier];

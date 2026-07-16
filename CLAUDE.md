@@ -32,18 +32,23 @@ sound is synthesized live with the Web Audio API.
   Opponent cards show a portrait of the racer's car (`carPortrait`): a
   second small offscreen WebGLRenderer, data-URLs cached per tier+color.
 - `src/economy.js` — part prices, car trade-in, and who shows up to race you:
-  `WAGER_SLOTS` (the double-or-nothing board — see Design intent), `makeRoster`,
-  `aiParts`, `partPrice`/`priceScale`, `brokeLine`, `wagerLoss`. **Pure
-  functions over a `player` object — no THREE, no DOM.** That's the point of the
-  split, and it isn't cosmetic: it's what lets a Node script play a whole career
-  against the real physics and the real AI, which is where every number in the
-  wager-ladder entry comes from. Keep it importable from Node.
+  the 12-card board (see Design intent), `makeRoster`, `aiParts`, `buildLevel`,
+  `slotWager`, `partPrice`/`priceScale`, `brokeLine`, `wagerLoss`, `round100`.
+  **Everything is even $100s** (Jason, 2026-07-15): prices, wagers, purses and
+  sale values all pass through `round100`, so the player's roll stays a $100
+  multiple forever by construction (main.js `load()` rounds pre-existing saves
+  in). **Pure functions over a `player` object — no THREE, no DOM.** That's the
+  point of the split, and it isn't cosmetic: it's what lets a Node script play a
+  whole career against the real physics and the real AI, which is where every
+  number in the board entry comes from. Keep it importable from Node.
 - `src/data.js` — all balance data: `CAR_TIERS` (7-car pink-slip ladder,
   Model A → Hemi 'Cuda, each with a `susp` base softness), `PARTS`
-  (6 categories × 3 buyable levels — prices here are **Model A money**, scaled
-  by car tier in `economy.js`), racer names/flavor, `RACER_COLORS`
-  (period paints shuffled per roster in `makeRoster` so no two opponents
-  match — the race AI mesh wears the same `opp.carColor` as the card;
+  (6 categories × 3 buyable levels — prices here are **Model A money** in even
+  $100s, scaled by car tier in `economy.js`; the full build is $5,900),
+  racer names/flavor (36 characters — the board deals 12 a visit, so the pool
+  stays deep; Jason's wife likes the quotes, keep them good), `RACER_COLORS`
+  (14 period paints shuffled per roster in `makeRoster` so no two of the 12
+  cards match — the race AI mesh wears the same `opp.carColor` as the card;
   bosses stay pink, so no pinks in the list), `BOSSES` ladder.
 - `src/carmesh.js` — procedural car builder; three era styles (`prewar`,
   `fifties`, `muscle`) from boxes/cylinders + a `wedge()` prism helper.
@@ -158,144 +163,122 @@ sound is synthesized live with the Web Audio API.
   untouched — it used to reset to 0). So a loss is a rebuild-and-retry inside
   the class, not a fall back down the ladder: same boss, same board, and your
   cash is untouched, which keeps the pride-run safety net working at your own
-  tier. With parts at ×0.6 pricing a class's full build is a handful of races,
-  so the retry loop is short by design.
+  tier. A class's full build is about a dozen races by design (see the board
+  entry), and a rebuild after a boss loss is faster — the cash pile survives.
 - A broke player must never soft-lock — under `brokeLine(tier)` the whole board
-  becomes $0-wager "pride runs" for a real purse, with Free-Ride Freddy holding
-  the easiest slot. (This *is* the safety net; see the wager-ladder entry for why
-  it's a pride run and not a floor under the wagers.)
-- **The board is a risk dial: each race is double-or-nothing on your pile**
-  (Jason's ask, 2026-07-12: "make game progression faster, more arcade like… a
-  half dozen races in each class should net you enough parts to think about
-  challenging the boss. Scale opponents' gear and skill with the cash prize").
-  `WAGER_SLOTS` in `economy.js` is the whole design: four slots, each a fixed
-  **fraction of the cash you're carrying**, and the driver's skill is *derived
-  from the fraction* rather than rolled — which lands `aiParts` on exactly one
-  build level per slot:
-
-  | bet | driver | his car | you can take it when |
-  |------|--------|---------|----------------------|
-  | 35% | 2★ | stock | you're stock |
-  | 60% | 3★ | bolt-ons (L1) | you've bought L1 |
-  | 85% | 4★ | built (L2) | you've bought L2 |
-  | 100% — **the pile** | 5★ | maxed (L3) | you're maxed |
-
-  So "how much do I bet" *is* "how built is my car", and the card answers it
-  honestly: the portrait already renders his real `aiParts()` build, so you can
-  see the blower you're betting against. Growth compounds with the build — 1.35x
-  a race stock, 2.0x maxed — and *that* is the progression engine.
+  becomes $0-wager "pride runs" for one flat gas-money purse (`pridePurse` =
+  the broke line itself, so a single win puts you back into real wagers), with
+  Free-Ride Freddy holding the easiest slot. (This *is* the safety net; see
+  the board entry for why the purse is flat and why it's a pride run and not
+  a floor under the wagers.)
+- **The board: a dozen cards scaled to your BUILD, not your bankroll**
+  (Jason, 2026-07-15, replacing the four-slot percentage board: "a dozen or so
+  opponent cards... scaled with player part level. Drivers lower than your
+  parts level stop showing up... More advanced AI drivers creep in... each
+  tier to take about a dozen races... buy a couple parts, race, win, buy
+  another couple parts, race better AI, lose, lose money, race lower AI, get
+  money"). `makeRoster` deals `N_CARDS` (12) street cards + the boss, all
+  keyed off `buildLevel(parts)` — the mean part level, 0..3 (`pLvl` below):
+  - **His build slides with yours**: card i targets `pLvl + (−0.75 … +1.5)`
+    across the board (±0.1 jitter, clamped [0,3]). The easiest card is a
+    driver a notch below you — lesser drivers fade off the board as you level
+    up — and the top is up to 1.5 levels above, so by pLvl ≈ 1.5 the big-money
+    cards are maxed 5★ drivers. `aiParts` turns a fractional level into a
+    mixed build (1.5 ≈ half the parts at L2) with a 20% per-part −1 jitter.
+  - **Skill rides the build**: `0.25 + 0.25*bLvl ± 0.03` — stock cars carry
+    1–2★ drivers, L1 ≈ 3★, L2 ≈ 4★, maxed = 5★. Parts are the difficulty
+    lever; stars label it, and the portrait renders the real `aiParts` build.
+  - **The wager is what HE puts on the hood**: `slotWager(bLvl, tier)` =
+    `round100((400 + 700*bLvl) * priceScale(tier))`, min $100 — a tougher man
+    pays more, and the board's money grows as your build drags the window up.
+    It's an even-money bet **capped at the cash you carry** (`min(money, W)`):
+    you can never bet, or win, more than you have on you. That cap kills both
+    old failure modes at once — no bet you can't cover (the free-roll bug the
+    wager floor shipped), and no percentage-of-nothing death spiral (the old
+    all-percentage board punished spending on parts; a fixed ladder doesn't).
+    Carrying less than his stake just means racing him for all of yours —
+    double-or-nothing drama preserved where it belongs.
   Load-bearing findings, all from the career sim (see Testing):
-  1. **The matched slot is a sure thing, not a coin flip, and it has to be.**
-     Measured win-rate matrix (player build × slot, same tier, 16 seeds) is
-     essentially binary: your build matches the slot → ~100%; you're one level
-     short → ~0%. A flat-out human beats an equal-build AI reliably (the AI's
-     corner lift is worth ~1 s), and one part level is worth far more than that.
-     This is *load-bearing*: at a 1:1 payout a genuine coin flip has **zero
-     expected growth** — the pile just random-walks and the player grinds
-     forever. Progress only exists where he's favored. So the game is a judgment
-     game (is my car up to that bet?), not a dice game; the gamble is reaching
-     *up* a slot early. Don't "add tension" by flattening those win rates.
-  2. **A wager is always money you are carrying — but a percentage of nothing is
-     nothing, and that is the sharp edge of this whole design.** Spend your roll
-     on parts and a fraction of what's left is pocket change; one bad loss and
-     you grind $25 races forever (measured, 29 races to clear class 0). It is
-     tempting to fix that by *flooring the wager* at a class-scaled purse. **Do
-     not** — I shipped that and Jason hit it within a race: "I spent nearly all my
-     money on upgrades yet there are races I can enter with wagers way higher
-     than my current purse." A bet you can't cover reads as broken and *is* a free
-     roll (risk your last $200 to win $1,200). The honest fix is that being broke
-     changes **what kind of race you're offered**, not what a wager means: under
-     `brokeLine(tier)` the whole board turns into **pride runs** — $0 down, a real
-     purse (`frac * BASE_PURSE * priceScale(tier)`, so a tougher man still pays
-     more), which the card already has a name and a layout for. Same money the
-     floor was trying to hand you, minus the lie. It can't be farmed: one win puts
-     you back over the line, and by then a real wager pays better than the purse.
-     Note the boards you'll see most in a sim are pride boards (2,280 of 3,640 in
-     the invariant sweep) — that's fine, it's the safety net doing its job.
-     Regression check: over every tier × every cash level, **no street wager may
-     exceed `player.money`, and no $0 wager may carry a $0 prize** (a board of
-     dead races is a soft-lock you can sit in forever — the first cut of the
-     pride-run fix had exactly that, and the career sim ran 400 races on it).
-  3. **Spending every win on parts must not be punished, so make parts cheap.**
-     A percentage economy quietly rewards hoarding — cash in the pile is a bigger
-     bet, cash in parts is not — so the sim's buy-it-when-I-can-afford-it player
-     (which is how Jason plays) was the *slowest*. That's backwards for an arcade
-     game, and with the wager floor correctly gone the only honest lever left is
-     the price of the iron: a class's build has to be small next to what a class
-     earns. Sweeping a global price multiplier against races-to-boss (16 careers,
-     T0…T5): ×1.0 → 14.2/8.8/8.2/6.7/6.2/5.7, ×0.75 → 12.3/7.1/6.6/5.8/5.6/4.9,
-     **×0.6 → 8.5/6.6/5.9/5.1/4.5/3.7** (shipped), ×0.5 → 6.4/5.8/5.6/4.5/3.8/3.1.
-     Below ×0.6 money stops meaning anything; that's the floor on cheapness.
+  1. **A matched build is a photo finish now, and the sure win sits BELOW you.**
+     Since the drift-planner/draft-hunting AI upgrades, an equal-build 3★+ AI
+     ties or beats the flat-out proxy (±0.2 s); one build level below you is a
+     near-sure win, one above is a near-sure loss. This supersedes the old
+     "matched slot is a sure thing" note. The economy leans on it: income comes
+     from the ~3 cards under your level, matched cards are the gamble, and the
+     described lose-reach-up/recover-below rhythm is exactly what Jason asked
+     for. Don't flatten the below-you win rates.
+  2. **The pride purse is FLAT — one gas-money number per tier — and that
+     flatness is load-bearing** (Jason, 2026-07-16: "reduce the appeal of
+     pride races so they are not the preferred strat"). Under `brokeLine(tier)`
+     (= $400 × priceScale, rounded) every card goes $0-down for the same
+     purse: `pridePurse` = the broke line itself, so one win puts you back
+     over it and into real wagers. The first cut paid 0.6 × each slot's wager
+     instead, and the dominant strategy became "spend every dollar on parts,
+     then farm the hardest pride run you can win" — risk-free income that
+     scaled with your build. Measured after the fix (8 seeds, races to a
+     maxed build, normal vs spend-to-zero): T0 12.4 vs 12.3, T2 9.9 vs 11.8,
+     T4 7.4 vs 11.0 — the farm is strictly worse from ~L1 up and merely
+     break-even at stock T0, where the net is supposed to be generous. Don't
+     reintroduce a purse gradient; that's the farm.
+     Regression check (315-board invariant sweep, every tier × cash level ×
+     build): no street wager exceeds `player.money`, none is under $100 or off
+     the $100 grid, no $0 wager carries a $0 prize, boss always maxed/5★.
+  3. **Pacing, measured (16 careers, real physics, flat-out proxy, races to
+     the first boss challenge, incl. pride detours)**: T0 15.6, T1 11.4,
+     T2 10.7, T3 9.9, T4 9.9, T5 10.0. T0 reads long on this metric but is
+     ~12.4 races to a maxed build — the difference is loss/pride detours the
+     cautious sim policy takes; a human who wins the T0 photo finishes
+     (proxy loses ~2/tier there) lands nearer a dozen. Two knobs measured
+     useless for T0 — don't reach for them: starting cash (800 → 1000 moved
+     nothing; the old note's finding still holds) and `WAGER_BASE` (T0 income
+     is capped by the pile when the player shops down to the broke line, so
+     the ladder never binds there). Losses/tier run ~1-2 at T0, near 0 late
+     (the proxy plays safe; a human reaching up eats more, on purpose).
+     Cash into each class: $1,000 / ~$950 / $1,700 / $2,300 / $2,300 / $3,200
+     ≈ 3–5 parts of the new class (the boss-win sale is the old tin at
+     catalog price only — `carSaleValue` — plus whatever's left in your
+     pocket; the build itself is gone into the boss's hands).
   4. Part prices are **Model A money scaled by `priceScale(carTier)`**
-     (`PRICE_TIER_STEP` 0.35), and the purse floor scales the same way, so every
-     class is the same shape instead of the late ones being trivial from last
-     class's winnings. Set the step to 0 and prices go flat again.
-  Measured career (16 careers, real physics + real AI + a flat-out human proxy,
-  races to a *won* boss race): T0 **8.5**, T1 6.6, T2 5.9, T3 5.1, T4 4.5, T5 3.7
-  — against ~40/class before. T0 is the long one because it's the only class with
-  no car-sale seed behind it; more starting cash does **not** fix it (swept
-  800/1200/1800/2400 → 11.3/10.9/9.9/8.5, it flattens out), so don't reach for
-  that knob — the price of the iron is the one that moves it.
-  What "enough parts to think about challenging the boss" actually means, measured
-  (boss win-rate by player build, 16 seeds): T0 needs **L2.5** (L2 is a coin flip
-  at 50%), T1 L2.5, T2+ L2 is 94–100%. The boss gate loosens as you climb.
-  Starting cash $2,400; a full L3 build is $5,900 in Model A money.
-- Balance target: stock car beats 1–2★ racers, upgrades needed for 4–5★,
-  near-maxed car beats the boss. Street racer builds scale with stars
-  (`aiParts()` in economy.js, reworked 2026-07-11 after Jason found a 4★ easily
-  beatable stock): since flat-out straights landed, driver skill is worth
-  <1 s/race in the sim — **parts are the real difficulty lever**. Street
-  level = `max(0, round(skill*5) − 2) + (playerTier − opp.carTier)`:
-  1–2★ stock-pace, 3★ bolt-ons, 4★ a built car, and one tier of lesser
-  iron buys one extra level (in this data one tier ≈ one part level almost
-  exactly — Model A L2 70.3 s vs Deuce L1 69.7 s, 16-seed sim). The tier
-  bump is a **baseline, not a bonus** (Jason's tweak, 2026-07-11): the
-  stars term floors at 0 and the per-part −1 jitter floors at the deficit,
-  so even a 1★ in a Model A at Deuce level runs Deuce-stock pace (79.8 s
-  vs 78.0 ref) instead of a free win (~89 s stock). Exception:
-  Free-Ride Freddy carries `freebie: true` and skips the deficit baseline —
-  the mercy run stays a stock lesser car so broke never means stuck. The
-  tier term can't strip below stock, so `makeRoster` reserves the +1-tier
-  car draw for skill ≥ 0.55 (a 2★ in a better car would outrun its label).
-  `opp.partBoost` (chance = skill, previously assigned but never read)
-  bumps one random "pride part" a level. Bosses keep their own formula.
-  16-seed ladder at player tier 1 (stock proxy ref 78.0 s): 1★ 78.3 same
-  tier / 79.8 −1 tier, 2★ 77.9 / 79.5, 3★ 72.7 / 73.7, 4★ 64.6 / 65.2
-  (Jason's Model A case, was ~85+), +1-tier 4★ 68.1, boss 58.6. Upgraded
-  opponents also *sound* built for free (`soundSpec` gets the same parts).
-- Crown era — after THE KING (Jason's call, 2026-07-12). `crown` = player
-  carTier 6, the only way to own the 'Cuda, and there's no boss left to
-  race. Endgame rosters are their own mode in `makeRoster`/`aiParts`:
-  slot skill is floored at 0.55 (3–5★ only), builds run `1 + round(skill*2)` part
-  levels with a **floor of 1** (nobody brings a stock car to race the
-  champ; the −1 jitter and `partBoost` decide who shows up actually maxed),
-  and the wagers are the same pile fractions as the street — which on a champion's
-  bankroll is the money sink: a $22k pile deals a board of $7,750 / $13,450 /
-  $18,925 / $21,300. Same lesser-iron rule
-  as the street ladder: a −1-tier Charger buys one extra part level.
-  16-seed sim at the tier-6 race length (skill-1.0 AI as the player proxy,
-  maxed 'Cuda 61.6 s): crown 3★ 68.3, 4★ 62.4, 5★ maxed 61.9, 5★ maxed
-  Charger 64.2 — a maxed 'Cuda still wins every one, but the 4–5★ races are
-  ~1 s knife fights instead of the 21 s walkover the old stars−2 formula
-  gave (1★ stock 'Cuda was 82.5 s). A player who *stops* upgrading (level-2
-  parts, 66.8 s) now loses to the 4–5★ challengers — the crown's money sink
-  is the point. The mercy freebie is exempt (no `crown` flag on Freddy).
-  **One roster slot is a guaranteed peer** (Jason, 2026-07-12: "there should be
-  opponents with max'd out cars and max skill to choose from"): the random crown
-  draw alone could deal a board of 3★ bolt-on cars, and a maxed 'Cuda has nothing
-  to prove against those. Since the wager ladder landed this is **structural
-  rather than a patch**: the whole-pile slot *is* the peer race, so `makeRoster`
-  just gives that entry carTier 6 and an explicit all-3 `parts` (`aiParts`
-  returns a pre-set build, which is also what the card portrait renders). The
-  biggest bet on the board is the hardest man on it, at every tier — that's the
-  same promise the street ladder makes, and the crown is just its last rung.
-  Alongside it the `−1` build jitter **fades with skill in
-  crown mode** (`0.4 * (1 − skill)`, still a flat 0.4 on the street): a 5★
-  challenger arrives with the car actually finished rather than one carb short,
-  so several maxed rivals show up per roster, not one. Measured over 6 rosters:
-  1–3 maxed 5★ 'Cudas each, never zero (was: rarely any). Pace is unchanged —
-  this only decides *who shows up*, so the 61.9 vs 61.6 s knife fight above is
-  still what the peer race runs.
+     (`PRICE_TIER_STEP` 0.35) then rounded to $100 (min $100 — note the
+     rounding flattens cheap parts across tiers, that's fine), and the wager
+     ladder scales the same way, so every class is the same dozen-race shape.
+  Starting cash $1,000 — a few parts and gas money; a full L3 build is
+  $5,900 in Model A money.
+- Balance target (2026-07-15): a build-level gap decides street races (see the
+  board entry), and **the boss is a wall on purpose** — next-tier car, every
+  part at L3, skill 1.0, aggro 1.0, preset in `makeRoster` so the card pips
+  show the full house (Jason: "Each level's boss should... be HARD TO BEAT...
+  Beat me with him. We can lower boss level later after I play test").
+  Measured vs a MAXED player (flat-out proxy, 16 seeds, player margin):
+  T0 −6.6 s, T1 −3.0, T2 −2.5, T3 −1.8, T4 +0.1 (7/16 wins), T5 +1.4 (13/16).
+  T4/T5 flip only because the proxy exploits the free dirt line (the known
+  deferred issue) — a line-driving human will find them harder than that.
+  To soften a boss after playtest, pull parts back toward L2 first; the
+  measured ladder (8 seeds, maxed player, wins/margin): 2×L3 T0 0/8 −3.3 s /
+  T3 5/8 +0.4; 3×L3 T0 −4.6 / T3 4/8; 4×L3 T0 −6.1 / T3 0/8 −1.5; full L3 as
+  shipped. Skill and the `ai.js` planning grip stay the later knobs.
+  Street builds come off the card's `bLvl` in `aiParts`; one tier of lesser
+  iron still buys one extra part level (one tier ≈ one part level in this
+  data), the deficit is still a **baseline, not a bonus** (floors at the
+  deficit so a lesser-iron draw never runs below player-tier stock pace),
+  Free-Ride Freddy (`freebie: true`) still skips it, and the +1-tier car draw
+  is still reserved for skill ≥ 0.55. `partBoost` is gone — the fractional
+  bLvl mix does its job. Upgraded opponents also *sound* built for free
+  (`soundSpec` gets the same parts).
+- Crown era — after THE KING (Jason's call, 2026-07-12; reshaped with the
+  12-card board 2026-07-15). `crown` = player carTier 6, the only way to own
+  the 'Cuda, and there's no boss left to race. It's the same board with
+  floors: card builds floor at **level 1** (nobody brings a stock car to race
+  the champ), skill floors at 0.55 (3–5★ only), and the top card is the
+  **guaranteed peer** (Jason: "there should be opponents with max'd out cars
+  and max skill to choose from") — `makeRoster` gives it carTier 6, skill 1.0
+  and an explicit all-3 `parts` (`aiParts` honors a pre-set build, which is
+  also what the card portrait renders). The biggest bet on the board is the
+  hardest man on it, at every tier — the crown is just the last rung. On a
+  champion's roll the ladder is the money sink: a $22k pile deals a board of
+  ~$3,400 up to $7,800, every race even-money. The mercy freebie is exempt from the level floor (Freddy stays
+  a stock lesser car). A player who stops upgrading slides down the window
+  and the 4–5★ maxed challengers stop being winnable — the sink is the point.
 - Upgrades you can **see** (Jason's call, 2026-07-12: "reward the player for
   upgrading parts on each model"). Four of the six parts show on the car; the
   other two honestly don't:
@@ -863,9 +846,20 @@ is what proves the board is a judgment call and not a lottery).
 The trap to avoid: the harness's *player policy* will dominate your numbers if
 you let it. My first proxy gambled into races it couldn't win and measured 44
 races/class — a fact about my policy, not the game. Make the policy the one the
-UI actually invites (take the biggest bet whose car isn't better built than
-yours; buy the weakest part while keeping gas money) and sanity-check a verbose
-per-race log before believing any aggregate.
+UI actually invites (2026-07-15 tuning used: buy the cheapest next part while
+staying over the broke line; take the biggest wager at least 0.2 build levels
+below you; don't stake 70%+ of the pile on a card within 0.5 of your level) and
+sanity-check a verbose per-race log before believing any aggregate.
+Two harness facts found 2026-07-15, both load-bearing for future sims:
+1. **The proxy needs a keep-air dodge or every race is a tie.** A flat-out
+   proxy and the AI both converge on the racing line, touch, and the contact
+   trade speed-locks them to a 0.1 s photo finish for the whole race. Give the
+   proxy a sidestep when overlapped (±3.2 m off the other car inside 14 m) —
+   a human doesn't ride the opponent's door for 90 seconds.
+2. **Matched builds are photo finishes in current code** (drift-planner +
+   draft-hunting made the AI that fast): equal build 3★+ ties or beats the
+   proxy; one level down is a near-sure win; one up a near-sure loss. Any
+   economy tuning has to put the income on the below-your-level cards.
 
 For car-mesh visual checks, don't squint at dark garage screenshots: load
 the game page in headless chromium, then `page.evaluate` a dynamic
