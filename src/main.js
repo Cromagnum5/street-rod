@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { CAR_TIERS, PARTS, PART_KEYS, BOSSES, STARTING_MONEY, SAVE_KEY } from "./data.js";
-import { makeRoster, aiParts, carSaleValue, partPrice, freshParts, wagerLoss } from "./economy.js";
+import { makeRoster, aiParts, carSaleValue, partPrice, freshParts, wagerLoss, buildLevel } from "./economy.js";
 import { buildCar } from "./carmesh.js";
 import { Track, PALETTES, ROAD_HALF_W } from "./track.js";
 import { CarSim, effectiveStats, topSpeed, resolveContact, resolveDraft, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
@@ -665,6 +665,13 @@ states.RESULTS = {
         player.money += stake + bonus;
         html += `You take ${opp.name} for <span class="money">$${stake}</span>.`;
         if (bonus) html += `<br>The crowd pays <span class="bonusCash">$${bonus}</span> more &mdash; nobody bet on you.`;
+        // a risky pride win pays in crowd noise, never money — the flat purse
+        // is load-bearing (see CLAUDE.md), so the reward here is words only
+        if (opp.wager === 0) {
+          const gap = (opp.bLvl ?? 0) - buildLevel(player.parts);
+          if (gap >= 0.75) html += `<br>Broke, outgunned, and you put him away anyway &mdash; the crowd loses its mind. They'll be telling this one for years.`;
+          else if (gap > 0.25) html += `<br>Nothing on the hood but pride, and the crowd saw exactly who you beat. Word gets around.`;
+        }
         sfx.cashSound();
       } else {
         const lost = wagerLoss(player, stake);

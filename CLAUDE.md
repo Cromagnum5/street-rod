@@ -170,7 +170,12 @@ sound is synthesized live with the Web Audio API.
   the broke line itself, so a single win puts you back into real wagers), with
   Free-Ride Freddy holding the easiest slot. (This *is* the safety net; see
   the board entry for why the purse is flat and why it's a pride run and not
-  a floor under the wagers.)
+  a floor under the wagers.) A *risky* pride win — a card ≥0.25 build levels
+  above the player, two escalating lines at 0.25 and 0.75 in RESULTS — earns a
+  crowd-reaction flavor line, deliberately words and never money (Jason,
+  2026-07-16: bonus cash on pride runs was considered and rejected — any
+  reward gradient on a $0-down board is the measured spend-to-zero farm).
+  Freddy's bLvl 0 keeps the mercy run reaction-free by construction.
 - **The board: a dozen cards scaled to your BUILD, not your bankroll**
   (Jason, 2026-07-15, replacing the four-slot percentage board: "a dozen or so
   opponent cards... scaled with player part level. Drivers lower than your
