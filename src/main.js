@@ -671,6 +671,7 @@ states.RESULTS = {
           const gap = (opp.bLvl ?? 0) - buildLevel(player.parts);
           if (gap >= 0.75) html += `<br>Broke, outgunned, and you put him away anyway &mdash; the crowd loses its mind. They'll be telling this one for years.`;
           else if (gap > 0.25) html += `<br>Nothing on the hood but pride, and the crowd saw exactly who you beat. Word gets around.`;
+          else html += `<br>You both knew how this would end. Maybe let him have one someday &mdash; pride's all he's got.`;
         }
         sfx.cashSound();
       } else {
