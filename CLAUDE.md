@@ -46,7 +46,8 @@ sound is synthesized live with the Web Audio API.
   (6 categories × 3 buyable levels — prices here are **Model A money** in even
   $100s, scaled by car tier in `economy.js`; the full build is $5,900),
   racer names/flavor (36 characters — the board deals 12 a visit, so the pool
-  stays deep; Jason's wife likes the quotes, keep them good), `RACER_COLORS`
+  stays deep; each also carries a `gloat` shown when they beat you, bosses
+  included; Jason's wife likes the quotes, keep them good), `RACER_COLORS`
   (14 period paints shuffled per roster in `makeRoster` so no two of the 12
   cards match — the race AI mesh wears the same `opp.carColor` as the card;
   bosses stay pink, so no pinks in the list), `BOSSES` ladder.
@@ -165,6 +166,18 @@ sound is synthesized live with the Web Audio API.
   cash is untouched, which keeps the pride-run safety net working at your own
   tier. A class's full build is about a dozen races by design (see the board
   entry), and a rebuild after a boss loss is faster — the cash pile survives.
+  **Every loss ends with the winner's gloat** (Jason, 2026-07-16): all 36
+  street racers and all 6 bosses carry a `gloat` line in data.js (Freddy's
+  lives on his makeRoster card), appended to the losing results card — in
+  character, quote-grade (Jason's wife reads these; keep both flavor and
+  gloat good when adding racers). History worth knowing: a $1,000 boss
+  condolence prize shipped alongside the boss pace-match that morning and
+  lasted hours — flagged on arrival as a farm (a stock-build boss loss costs
+  nothing, so throwing boss races was a guaranteed risk-free $1,000/race,
+  out-earning pride runs), and Jason cut the money and kept the jokes. The
+  boss gloats are deliberately written money-free so the card never implies
+  cash the CASH line doesn't show; keep them that way, and don't
+  reintroduce a payout on any $0-down loss.
 - A broke player must never soft-lock — under `brokeLine(tier)` the whole board
   becomes $0-wager "pride runs" for one flat gas-money purse (`pridePurse` =
   the broke line itself, so a single win puts you back into real wagers), with
@@ -230,7 +243,9 @@ sound is synthesized live with the Web Audio API.
      reintroduce a purse gradient; that's the farm.
      Regression check (315-board invariant sweep, every tier × cash level ×
      build): no street wager exceeds `player.money`, none is under $100 or off
-     the $100 grid, no $0 wager carries a $0 prize, boss always maxed/5★.
+     the $100 grid, no $0 wager carries a $0 prize, boss always 5★ at his
+     tier's `BOSS_BUILD_SUM` build (he stopped being maxed 2026-07-16 — see
+     the balance-target entry).
   3. **Pacing, measured (16 careers, real physics, flat-out proxy, races to
      the first boss challenge, incl. pride detours)**: T0 15.6, T1 11.4,
      T2 10.7, T3 9.9, T4 9.9, T5 10.0. T0 reads long on this metric but is
@@ -294,19 +309,30 @@ sound is synthesized live with the Web Audio API.
   sorted board. One wrinkle: the crown peer's `bonus` is recomputed after his
   build is forced to 3 (his *wager* deliberately stays the one the top slot
   rolled — pre-existing behavior).
-- Balance target (2026-07-15): a build-level gap decides street races (see the
-  board entry), and **the boss is a wall on purpose** — next-tier car, every
-  part at L3, skill 1.0, aggro 1.0, preset in `makeRoster` so the card pips
-  show the full house (Jason: "Each level's boss should... be HARD TO BEAT...
-  Beat me with him. We can lower boss level later after I play test").
-  Measured vs a MAXED player (flat-out proxy, 16 seeds, player margin):
-  T0 −6.6 s, T1 −3.0, T2 −2.5, T3 −1.8, T4 +0.1 (7/16 wins), T5 +1.4 (13/16).
-  T4/T5 flip only because the proxy exploits the free dirt line (the known
-  deferred issue) — a line-driving human will find them harder than that.
-  To soften a boss after playtest, pull parts back toward L2 first; the
-  measured ladder (8 seeds, maxed player, wins/margin): 2×L3 T0 0/8 −3.3 s /
-  T3 5/8 +0.4; 3×L3 T0 −4.6 / T3 4/8; 4×L3 T0 −6.1 / T3 0/8 −1.5; full L3 as
-  shipped. Skill and the `ai.js` planning grip stay the later knobs.
+- Balance target (2026-07-16, superseding the 07-15 "boss is a wall"): a
+  build-level gap decides street races (see the board entry), and **the boss
+  is pace-matched to the top card of your own class**. Jason playtested the
+  wall and it was exactly that ("the boss is impossible to beat now with a
+  max'd out car"); the new doctrine is his: "if the player feels like they
+  can beat the max'd same tier car consistently then they are ready to take
+  on the boss." He still drives the next-tier pink car at skill 1.0 / aggro
+  1.0 — the equalizer is his BUILD, pulled down per tier: `BOSS_BUILD_SUM`
+  in economy.js = [10,13,13,13,14,14] total part levels (`bossParts` spreads
+  them evenly, remainder engine > tires > gearbox > induction > suspension >
+  exhaust; card pips show the real build, `bLvl` = sum/6). Those sums are
+  measured, not derived (16 seeds, solo pace + full-contact head-to-head vs
+  the maxed flat-out proxy): boss margin tracks the maxed same-tier 5★ card
+  within ~0.3 s at every tier — T0 −1.27 s vs the card's −1.10, T1 +0.08 vs
+  −0.25, T2 +0.04 vs −0.69, T3 +1.06 vs +1.08, T4 +2.70 vs +2.76, T5 +4.46
+  vs +4.24 (all-L3 was 1–6 s harder than the card and 0/16 winnable through
+  T3). The gate by player build (same harness): L2 loses everywhere (−1.4 to
+  −8.4 s), L2.5 breaks even only at T4+, maxed races him like the top card —
+  below-max still meets a wall, so the boss stays the gate. Proxy caveats as
+  ever: the T0–T2 maxed cells are photo finishes the proxy loses ~50/50 and
+  a line-driving human wins; T4/T5 margins are fattened by the free dirt
+  line. One tier of iron ≈ one part level is why the sums sit well under 18.
+  If playtest wants him softer/harder, the sums are the first knob now;
+  skill and the `ai.js` planning grip stay the later ones.
   Street builds come off the card's `bLvl` in `aiParts`; one tier of lesser
   iron still buys one extra part level (one tier ≈ one part level in this
   data), the deficit is still a **baseline, not a bonus** (floors at the
@@ -649,9 +675,10 @@ sound is synthesized live with the Web Audio API.
      T0 5.05→3.20 s, T1 10.21→7.51, T2 10.27→6.91, T3 10.52→6.84, T4
      12.04→8.09, T5 12.84→9.02. This is the **fourth** boss tightening in a
      row: the readiness gate rose about half a part level (T0 at L2.5:
-     16/16→12/16; T1 at L2: 15/16→9/16). If playtest says a boss is too hard,
-     the first knob is the skill² in the constructor's `driftPlan` (drop bosses
-     toward linear), before touching planning grip.
+     16/16→12/16; T1 at L2: 15/16→9/16). (These tightenings are what
+     eventually made the all-L3 boss unbeatable — resolved 2026-07-16 by
+     pace-matching his build instead, see the balance-target entry;
+     `BOSS_BUILD_SUM` is the boss knob now, `driftPlan`/planning grip later.)
 - The racing line is real and skill buys it (Jason's call, 2026-07-12: "high
   tiers should take perfect lines, lower tiers less perfect but still in the
   ballpark"). `Track.racingOffset(d)` is the curvature-minimizing path through

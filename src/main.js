@@ -654,7 +654,8 @@ states.RESULTS = {
       } else {
         html += `${opp.name} takes your keys and doesn't look back.<br>` +
           `Your built <span class="pink">${playerTier().name}</span> is gone.<br>` +
-          `The junkyard man takes pity — there's a bone-stock ${playerTier().short} out back with your name on it.`;
+          `The junkyard man takes pity — there's a bone-stock ${playerTier().short} out back with your name on it.<br><br>` +
+          `${opp.gloat}`;
         player.parts = freshParts();
         sfx.loseSound();
       }
@@ -680,6 +681,7 @@ states.RESULTS = {
         html += lost > 0
           ? `${opp.name} pockets your <span class="money">$${lost}</span> and grins.`
           : `${opp.name} wins nothing but bragging rights. Somehow that's worse.`;
+        if (opp.gloat) html += `<br>${opp.gloat}`;
         sfx.loseSound();
       }
     }

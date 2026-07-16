@@ -113,6 +113,29 @@ export const pridePurse = (carTier) => brokeLine(carTier);
 /** Belt and braces: a wager is coverable by construction, but never bill past the roll. */
 export const wagerLoss = (player, wager) => Math.min(wager, player.money);
 
+// ------------------------------------------------------------------- the boss
+//
+// The boss drives the next-tier car — the pink slip IS the prize — but his
+// build is pulled back until his pace matches a maxed 5-star driver in the
+// PLAYER's class (Jason, 2026-07-16, superseding "HARD TO BEAT, lower after
+// playtest": "if the player feels like they can beat the max'd same tier car
+// consistently then they are ready to take on the boss"). Total part levels
+// per tier, measured against that yardstick with the real physics (16 seeds,
+// solo pace + full-contact head-to-head vs the flat-out proxy): these sums
+// track the maxed same-tier card within ~0.3 s at every tier, where all-L3
+// was 2-7 s faster and unbeatable. The next-tier iron is itself worth about
+// a part level, which is why the sums land well under 18. Levels are spread
+// evenly, remainder on the categories that pay pace first.
+export const BOSS_BUILD_SUM = [10, 13, 13, 13, 14, 14];
+const BOSS_PART_PRIO = ["engine", "tires", "gearbox", "induction", "suspension", "exhaust"];
+export function bossParts(tier) {
+  const sum = BOSS_BUILD_SUM[tier];
+  const base = Math.floor(sum / 6), rem = sum - base * 6;
+  const p = Object.fromEntries(PART_KEYS.map((k) => [k, base]));
+  for (let i = 0; i < rem; i++) p[BOSS_PART_PRIO[i]] += 1;
+  return p;
+}
+
 export function makeRoster(player, rand = Math.random) {
   const tier = player.carTier;
   // Crown: the King is beaten and the 'Cuda is yours, so the ladder is over.
@@ -146,6 +169,7 @@ export function makeRoster(player, rand = Math.random) {
 
     roster.push({
       name: names[i % names.length].name, flavor: names[i % names.length].flavor,
+      gloat: names[i % names.length].gloat, // his line when he beats you (results card)
       carTier, skill, bLvl, crown, boss: false,
       wager,
       prize: broke ? pridePurse(tier) : 0,
@@ -161,6 +185,7 @@ export function makeRoster(player, rand = Math.random) {
   if (broke) {
     roster[0] = {
       name: "Free-Ride Freddy", flavor: "Races for the love of it. Slips you gas money if you win.",
+      gloat: "&ldquo;I won one! Hoo, don't that beat all! Keep the chin up &mdash; pride's all I ever take home anyway.&rdquo;",
       // freebie: exempt from the tier-deficit parts baseline in aiParts —
       // the mercy run stays a stock lesser car so broke never means stuck
       freebie: true, bLvl: 0,
@@ -187,12 +212,14 @@ export function makeRoster(player, rand = Math.random) {
   if (tier < 6) {
     const b = BOSSES[tier];
     roster.push({
-      name: b.name, flavor: b.flavor,
-      // The boss is the gate, and he is built like one (Jason, 2026-07-15:
-      // "HARD TO BEAT... beat me with him"): next-tier car, every part maxed,
-      // 5-star driver. First knob to soften him: pull parts back toward L2.
-      carTier: tier + 1, skill: 1.0, bLvl: 3, wager: 0, bonus: 0, boss: true,
-      parts: Object.fromEntries(PART_KEYS.map((k) => [k, 3])),
+      name: b.name, flavor: b.flavor, gloat: b.gloat,
+      // The boss is the gate, but a fair one (Jason, 2026-07-16): a 5-star
+      // in next-tier iron built down until his pace equals a maxed same-tier
+      // 5-star — beat the top card of your own class consistently and you
+      // are ready for him. See BOSS_BUILD_SUM for the measurement.
+      carTier: tier + 1, skill: 1.0, bLvl: BOSS_BUILD_SUM[tier] / 6,
+      wager: 0, bonus: 0, boss: true,
+      parts: bossParts(tier),
       aggro: 1, // your car is on the hood: he will not give you an inch
       carColor: 0xff4fa3, // bosses are pink, always
     });
