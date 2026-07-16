@@ -77,6 +77,25 @@ export const MIN_WAGER = 100;
 export const slotWager = (bLvl, carTier) =>
   Math.max(MIN_WAGER, round100((WAGER_BASE + WAGER_PER_LEVEL * bLvl) * priceScale(carTier)));
 
+// The reach-up bonus (Jason, 2026-07-16): gold the crowd puts up for beating a
+// car built ABOVE yours — without it, the wager cap means a thin roll sees the
+// same payout on every card and there is no reason to race the tougher man.
+// It rides the STAKE, not the tier, so the gradient survives any bankroll (a
+// $400 pile still sees the board's payouts climb with difficulty) and the gold
+// can never dwarf what's on the hood. The gap that pays is capped at +0.75 —
+// the winnable one-notch reach — so the near-hopeless cards at the top of the
+// board don't turn into gilded lottery tickets (career sim: an uncapped or
+// stake-dwarfing bonus turns a greedy player's T0 into a 50-race broke/pride
+// doom loop; at this shape his pacing holds and no policy farms it — the
+// no-upgrade farmer measurably loses money FASTER with the bonus than without).
+// Paid on a win only, on top of the wager; never on pride boards (the flat
+// purse is load-bearing — see pridePurse), never for the freebie or the boss.
+export const BONUS_FRAC = 0.75;    // gold per level of reach, as a fraction of the stake
+export const BONUS_GAP_MAX = 0.75; // reach past this pays no extra
+
+export const slotBonus = (bLvl, pLvl, wager) =>
+  round100(BONUS_FRAC * Math.min(BONUS_GAP_MAX, Math.max(0, bLvl - pLvl)) * wager);
+
 // Too broke to bet real money: below this line the whole board turns into
 // pride runs — $0 down for a fixed purse — so broke is a detour, never a dead
 // end. It can't be farmed: one win puts you back over the line, and a real
@@ -123,13 +142,14 @@ export function makeRoster(player, rand = Math.random) {
     let bump = [0, 0, -1, 1][Math.floor(rand() * 4)];
     if (bump === 1 && skill < 0.55) bump = 0;
     const carTier = Math.max(0, Math.min(6, tier + bump));
-    const w = slotWager(bLvl, tier);
+    const wager = broke ? 0 : Math.min(player.money, slotWager(bLvl, tier));
 
     roster.push({
       name: names[i % names.length].name, flavor: names[i % names.length].flavor,
       carTier, skill, bLvl, crown, boss: false,
-      wager: broke ? 0 : Math.min(player.money, w),
+      wager,
       prize: broke ? pridePurse(tier) : 0,
+      bonus: broke ? 0 : slotBonus(bLvl, pLvl, wager),
       carColor: colors[i % colors.length],
       // how hard he leans back when you lean on him (ai.js). Rolled independent
       // of skill on purpose: a 2-star can be a bruiser and a 5-star can be
@@ -144,7 +164,7 @@ export function makeRoster(player, rand = Math.random) {
       // freebie: exempt from the tier-deficit parts baseline in aiParts —
       // the mercy run stays a stock lesser car so broke never means stuck
       freebie: true, bLvl: 0,
-      carTier: Math.max(0, tier - 1), skill: 0.25, wager: 0,
+      carTier: Math.max(0, tier - 1), skill: 0.25, wager: 0, bonus: 0,
       prize: pridePurse(tier),
       boss: false, crown,
       aggro: 0.2, // races for the love of it — he'll give you the room
@@ -160,6 +180,7 @@ export function makeRoster(player, rand = Math.random) {
     peer.bLvl = 3;
     peer.skill = 1.0;
     peer.parts = Object.fromEntries(PART_KEYS.map((k) => [k, 3])); // aiParts honors a pre-set build
+    peer.bonus = broke ? 0 : slotBonus(peer.bLvl, pLvl, peer.wager); // his build moved; his gold moves with it
   }
 
   roster.sort((a, b) => a.wager - b.wager || a.bLvl - b.bLvl);
@@ -170,7 +191,7 @@ export function makeRoster(player, rand = Math.random) {
       // The boss is the gate, and he is built like one (Jason, 2026-07-15:
       // "HARD TO BEAT... beat me with him"): next-tier car, every part maxed,
       // 5-star driver. First knob to soften him: pull parts back toward L2.
-      carTier: tier + 1, skill: 1.0, bLvl: 3, wager: 0, boss: true,
+      carTier: tier + 1, skill: 1.0, bLvl: 3, wager: 0, bonus: 0, boss: true,
       parts: Object.fromEntries(PART_KEYS.map((k) => [k, 3])),
       aggro: 1, // your car is on the hood: he will not give you an inch
       carColor: 0xff4fa3, // bosses are pink, always

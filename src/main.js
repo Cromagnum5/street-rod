@@ -364,7 +364,8 @@ function cardHTML(opp) {
            <div class="warn">Win: you drive home in the ${CAR_TIERS[opp.carTier].short}.<br>Lose: you hand over YOUR keys.</div>`
         : opp.wager === 0
           ? `<div class="wager">PRIDE RUN &mdash; win $${opp.prize ?? 0}</div>`
-          : `<div class="wager">WAGER &nbsp;$${opp.wager}</div>`}
+          : `<div class="wager">WAGER &nbsp;$${opp.wager}${opp.bonus
+              ? `<span class="bonusCash"> + $${opp.bonus} BONUS</span>` : ""}</div>`}
     </div>`;
 }
 
@@ -482,8 +483,9 @@ function buildRaceScene(opp) {
   race.aiRevT = 0.3 + Math.random() * 0.6; // first blip lands shortly after staging
 
   el("hudMoney").textContent = `CASH $${player.money}`;
-  el("hudWager").textContent = opp.boss ? "♡ PINK SLIP RACE ♡"
-    : opp.wager === 0 ? `PRIDE RUN — $${opp.prize ?? 0}` : `WAGER $${opp.wager}`;
+  el("hudWager").innerHTML = opp.boss ? "♡ PINK SLIP RACE ♡"
+    : opp.wager === 0 ? `PRIDE RUN — $${opp.prize ?? 0}`
+    : `WAGER $${opp.wager}` + (opp.bonus ? ` <span class="bonusCash">+ $${opp.bonus}</span>` : "");
   el("hudWager").classList.toggle("boss", !!opp.boss);
   el("centerMsg").textContent = "";
 
@@ -658,9 +660,11 @@ states.RESULTS = {
       }
     } else {
       const stake = opp.wager === 0 ? (won ? (opp.prize ?? 0) : 0) : opp.wager;
+      const bonus = opp.wager > 0 ? (opp.bonus ?? 0) : 0; // reach-up gold rides a real wager only
       if (won) {
-        player.money += stake;
+        player.money += stake + bonus;
         html += `You take ${opp.name} for <span class="money">$${stake}</span>.`;
+        if (bonus) html += `<br>The crowd pays <span class="bonusCash">$${bonus}</span> more &mdash; nobody bet on you.`;
         sfx.cashSound();
       } else {
         const lost = wagerLoss(player, stake);

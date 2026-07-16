@@ -197,7 +197,9 @@ sound is synthesized live with the Web Audio API.
     wager floor shipped), and no percentage-of-nothing death spiral (the old
     all-percentage board punished spending on parts; a fixed ladder doesn't).
     Carrying less than his stake just means racing him for all of yours —
-    double-or-nothing drama preserved where it belongs.
+    double-or-nothing drama preserved where it belongs. (The cap used to
+    flatten the whole board's payout when the roll was thin — the reach-up
+    bonus entry below is the fix.)
   Load-bearing findings, all from the career sim (see Testing):
   1. **A matched build is a photo finish now, and the sure win sits BELOW you.**
      Since the drift-planner/draft-hunting AI upgrades, an equal-build 3★+ AI
@@ -244,6 +246,48 @@ sound is synthesized live with the Web Audio API.
      ladder scales the same way, so every class is the same dozen-race shape.
   Starting cash $1,000 — a few parts and gas money; a full L3 build is
   $5,900 in Model A money.
+- **Reach-up bonus: gold on the cards above your build** (Jason, 2026-07-16:
+  "give incentive to race higher level AIs... often the player is presented
+  with cards of increasing difficulty but the reward is the same... shows up
+  more the lower the player is on cash"). The wager cap was what flattened it:
+  shopped down near the broke line, every card's wager = the whole roll, so
+  the board read as rising risk for identical reward. Now every street card
+  built above you carries `bonus = slotBonus(bLvl, pLvl, wager)` =
+  `round100(BONUS_FRAC 0.75 × min(BONUS_GAP_MAX 0.75, bLvl − pLvl) × wager)` —
+  paid on top of the even-money wager, **on a win only** (a loss still costs
+  just the wager), shown in gold on the card ("+ $400 BONUS"), the HUD wager
+  line and the results line (`.bonusCash`; gold `--gold` was already the
+  "earned things" accent, so this stays inside the two-accent theme). Three
+  load-bearing choices, all from the career sim (8 seeds, real physics):
+  1. **It rides the STAKE, not the tier.** Bonus ∝ the *capped* wager, so the
+     gradient survives any bankroll (a $700 roll at T2 sees its flat $700
+     wagers climb to $700 + $400 gold up the board) and the gold can never
+     dwarf what's on the hood. Flat $-per-level versions ($600+ Model A money)
+     made near-broke boards read as lottery tickets and ground a gold-greedy
+     policy's T0 into a 50-race broke↔pride doom loop; stake-proportional at
+     0.75 keeps that same policy within ~5 races of baseline everywhere past
+     stock T0 (and those 5 are stock-T0 photo finishes the proxy loses ~50/50 —
+     human-discounted, same caveat as the pacing entry).
+  2. **The gap that pays caps at +0.75** — the winnable one-notch reach. The
+     measured win curve vs gap (16 seeds/cell): +0.25 ≈ 0.2–0.9 by tier/build,
+     +0.5 ≈ 0.1–0.9, +0.75 ≈ 0.06–0.3, +1 ≈ 0. Uncapped, the biggest gold sat
+     on the near-hopeless top cards; capped, the best gold-per-risk is the
+     one-notch card, which is exactly the "race better AI, lose, recover below"
+     rhythm the board was built for.
+  3. **Zero when broke, zero for Freddy, zero for the boss.** The flat pride
+     purse is load-bearing (see the board entry) — a gold gradient on a $0-down
+     board is precisely the farm that was cut on 2026-07-16.
+  No farm at this shape, measured: the no-upgrade farmer *loses money faster*
+  with the bonus than without ($1,000 → $250 vs $350 over 40 races — the gold
+  drags him into losses); a lottery policy (always the biggest total payout)
+  dies cycling broke↔pride at every tier; and the safe player's board is
+  bit-identical (bonus is 0 at/below your level), so the shipped pacing holds
+  unchanged (13.4/12.1/10.6/10.3/9.8/10.0 races T0–T5 in the same harness).
+  Invariant sweep (1,323 boards, tier × cash × build): bonus on the $100 grid,
+  ≤ 0.5625 × wager, never on pride/boss/freebie cards, never decreasing up the
+  sorted board. One wrinkle: the crown peer's `bonus` is recomputed after his
+  build is forced to 3 (his *wager* deliberately stays the one the top slot
+  rolled — pre-existing behavior).
 - Balance target (2026-07-15): a build-level gap decides street races (see the
   board entry), and **the boss is a wall on purpose** — next-tier car, every
   part at L3, skill 1.0, aggro 1.0, preset in `makeRoster` so the card pips

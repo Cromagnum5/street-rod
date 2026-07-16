@@ -8,7 +8,8 @@
   /* Monochrome technical-catalog theme (mcmaster.com, inverted):
      black paper, white ink, gray hairline rules. Two accents only:
      pink for boss / pink-slip markers, gold for earned things
-     (skill stars, owned upgrade pips). Everything else stays grayscale. */
+     (skill stars, owned upgrade pips, reach-up bonus cash).
+     Everything else stays grayscale. */
   :root {
     --ink: #ffffff;
     --dim: #9a9a9a;
@@ -28,6 +29,8 @@
   }
   #game { position: fixed; inset: 0; }
   canvas { display: block; }
+  /* reach-up bonus money: cards, HUD wager line, results */
+  .bonusCash { color: var(--gold); font-weight: 700; }
 
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; pointer-events: none; }
   .hidden { display: none !important; }
