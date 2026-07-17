@@ -123,9 +123,10 @@ sound is synthesized live with the Web Audio API.
   the surface
   (`y`/`grade`/`groundPitch`, no vertical velocity — no jumps by design),
   race-mesh roots take ground pitch (their `rotation.order` is `"YXZ"` for
-  the same reason as wheels), the camera height rides `race.camY`, a
-  slow-smoothed copy of car y, and dash/edge-line instances pitch with
-  `grade` so they lie on the slope. The ground is a terrain skirt riding
+  the same reason as wheels), the camera rides the car's road height as a
+  rigid offset (see the camera entry — it used to be a slow-smoothed copy,
+  `race.camY`, and that was backwards), and dash/edge-line instances pitch
+  with `grade` so they lie on the slope. The ground is a terrain skirt riding
   the ribbon (flat at road height to ±62 m, past the tree band, then
   falling to y=−1.2 by ±100 m to dip under the 9000 m plane — same
   material, so the seam is invisible). Two skirt constraints: the outer
@@ -639,6 +640,33 @@ sound is synthesized live with the Web Audio API.
   deliberately tight (Jason, 2026-07-10): `4.3 + camSpeed * 0.0065`, height
   scaled to keep the same look-down angle. Don't pull it back out; any
   closer needs the lookAt point pulled in too.
+  **The rig hangs off the car's road height as a RIGID offset — height and
+  aim point both — and smoothing that height is backwards** (Jason
+  playtested + approved 2026-07-17, "feels good"). It used to ride
+  `race.camY`, a gain-4 lagged copy of car y, added pre-emptively so a
+  future crest wouldn't lurch the frame. It does the opposite: a lagged
+  height decouples the camera from the car, and then **the car is what
+  slides up and down the screen**. A rigid offset reproduces the flat-road
+  geometry exactly every frame, so the car *cannot* move in frame — the
+  hills translate the whole rig instead, and `CAM_FOLLOW`'s lerp damps y
+  along with x/z, which is all this axis needs. Measured (12 seeds, maxed
+  'Cuda at 150 mph, car's vertical position in frame as NDC drift; hills
+  scaled ×N by scaling `track.points[i].y`, which preserves crest count and
+  wavelength): shipped hills 0.137 → **0.019**, ×3 hills 0.408 → **0.055**,
+  ×5 hills 0.675 → **0.091**. Not a trade against seasickness — rigid's max
+  camera vertical velocity is *identical* (5.88 vs 5.76 m/s at ×3; it moves
+  the same, just in sync) and its per-frame steps are *smaller* (max 0.0022
+  vs 0.0051, RMS 5x lower). Reversals/s go UP (3.8 → 6.0) and that metric is
+  a red herring here: it counts direction flips regardless of size, so
+  deleting a big slow drift leaves small noise that reverses often — measure
+  step *size*, not flips. Don't reintroduce a second height smoother.
+  Terrain clearance is a non-issue and the arithmetic trap is worth knowing:
+  the camera never clips a crest, because what matters is grade × the
+  camera's trail (~11.4 m at 150 mph) = 1.1 m at 10%, **not** the road's
+  vertical speed (6.7 m/s) — the 2.15 m ride height covers it. Worst
+  measured clearance at ×3 is 1.79 m rigid (1.01 m for the old lagged
+  version — the lag hurt this too). Margin runs out around ×5 / 17% grades;
+  a terrain-height floor under the camera is the fix *then*, not before.
   **The real chase-distance knob is `CAM_FOLLOW`, not that formula**
   (measured 2026-07-12 after Jason said the camera was still way back at
   180 mph). `camera.position.lerp(camGoal, 1 - exp(-dt*CAM_FOLLOW))` is an

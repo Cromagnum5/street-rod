@@ -627,7 +627,6 @@ function buildRaceScene(opp) {
   race.prevSpeed = 0;
   race.accelSm = 0;
   race.camSpeed = 0;
-  race.camY = 0;
   race.lastClunk = -9;
   race.aiRev = 0;
   race.aiRevT = 0.3 + Math.random() * 0.6; // first blip lands shortly after staging
@@ -728,17 +727,22 @@ function raceTick(t, dt) {
   // framing follows a smoothed speed, extra slow once the race is over, so
   // braking to a stop past the finish line doesn't rubber-band the camera
   race.camSpeed += (p.speed - race.camSpeed) * Math.min(1, dt * (race.over ? 1.0 : 6));
-  // camera height rides a slower-smoothed copy of the car's road height so a
-  // future crest/dip won't lurch the frame (Jason + big camera moves = seasick)
-  race.camY += (p.y - race.camY) * Math.min(1, dt * 4);
+  // The rig hangs off the car's road height as a RIGID offset — height and aim
+  // point both. This used to ride a lagged copy (`camY`, gain 4) to keep crests
+  // from lurching the frame, which is backwards: a lagged height decouples the
+  // camera from the car, and then the CAR is what slides up and down the screen.
+  // A rigid offset reproduces the flat-road geometry exactly at every instant,
+  // so the car cannot move in frame — the hills translate the whole rig instead.
+  // The lerp below already damps y along with x/z, which is all the smoothing
+  // this axis needs. Don't reintroduce a second height smoother.
   const dist = 4.3 + race.camSpeed * 0.0065;
-  const camGoal = new THREE.Vector3(p.x - fx * dist, race.camY + 2.15 + race.camSpeed * 0.002, p.z - fz * dist);
+  const camGoal = new THREE.Vector3(p.x - fx * dist, p.y + 2.15 + race.camSpeed * 0.002, p.z - fz * dist);
   // CAM_FOLLOW is the real chase-distance knob: an exponential smoother chasing a
   // target moving at v settles v/gain behind it, so this adds 0.1 s of travel (8 m
   // at 180 mph) on top of `dist` — 30x the dolly term. Lower it and the camera
   // falls back at speed; raise it and the chase goes rigid.
   camera.position.lerp(camGoal, 1 - Math.exp(-dt * CAM_FOLLOW));
-  camera.lookAt(p.x + fx * 7, race.camY + 1.1, p.z + fz * 7);
+  camera.lookAt(p.x + fx * 7, p.y + 1.1, p.z + fz * 7);
   // gentle widening with speed; the drama comes from a small acceleration kick
   // (zoom-out surge on launch/passing, slight tighten under braking)
   // contactLoss is added back so bumping the other car doesn't fire the
