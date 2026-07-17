@@ -416,6 +416,30 @@ sound is synthesized live with the Web Audio API.
   the map buys nothing. (Absolute ms is software raster and says nothing about a
   real GPU — Jason's playtest is what cleared the frame rate, same as the audio
   rule: some things only his machine can answer.)
+- **The road wears the palette, and the number that matters is road-vs-ground**
+  (Jason's call, 2026-07-16, straight after shadows). The asphalt was one
+  hardcoded `0x3a3a3e` shared by all four palettes, so the road looked the same
+  at noon and at midnight. Worse, the ribbon is **Lambert — it wears the sun's
+  colour**, which is why picking a road colour in isolation doesn't work: dusk's
+  orange sun at 1.6 dragged neutral grey onto almost exactly dusk's brown
+  ground, and night's road sat muddy against the dark green. `palette.road` now
+  carries it, chosen against that palette's `ground` and `sun` together.
+  Measured with an objective proxy (real rendered pixels — asphalt at lateral
+  ±4, clear of the centre dashes at 0 and the edge lines at 7.1, vs bare ground
+  at ±11, inside the tree line at 13.5; 25 m ahead at the start line, where the
+  launch zone is straight by construction; old colour A/B'd against new **in the
+  same frame** so light and camera are identical). rgb distance / luma delta:
+  noon 111/77 → unchanged (already strong, left alone), dusk 45/24 → 53/29,
+  **night 23/9 → 38/16** — that's the real fix, a luma delta of 9 out of 255 is
+  not a different surface — and desert 162/100 → **141/87**.
+  Desert went *down* on purpose: sun-bleached asphalt is flavour, and it spends
+  contrast that palette has in abundance (141 is still ~4x night's 38). Night's
+  road runs **lighter than its ground**, which realism forbids — asphalt is
+  black at midnight — but the road has to read; that's the call. The unlit
+  dash/edge instances are MeshBasic and stay bright at any hour, so they carry
+  the other half of night.
+  Related, noticed and left alone: `horizon` is a dead palette key — declared on
+  all four, read nowhere.
 - **Drafting** (Jason's ask, 2026-07-12: "I want to be able to draft the car in
   front of me and pick up speed"). `resolveDraft` in physics.js is a symmetric
   pair check: whoever is behind gets `car.draft` 0..1, and `step` spends it as a
@@ -964,6 +988,18 @@ Two harness facts found 2026-07-15, both load-bearing for future sims:
    draft-hunting made the AI that fast): equal build 3★+ ties or beats the
    proxy; one level down is a near-sure win; one up a near-sure loss. Any
    economy tuning has to put the income on the below-your-level cards.
+
+**Warm the browser before the first screenshot, and never trust screenshot #1.**
+The first `page.screenshot` of a cold headless browser came back with the road
+ribbon, the dashes and the edge lines *all* missing, while trees, banner and cars
+rendered normally — a probe at that same moment showed the mesh visible, in the
+scene, 1942 verts, bounding sphere intact, and the renderer issuing all 82 draw
+calls. It's a capture artifact of the cold GPU process, and it only hit the first
+page of the run; a throwaway screenshot plus a settle before measuring fixes it.
+Worth knowing how it was caught, because a screenshot that plausible is a trap:
+the A/B included a palette whose colour was *deliberately unchanged*, and when
+that one measured a difference the harness convicted itself. Put an unchanged
+cell in any visual A/B — it's the cheapest possible check on your own rig.
 
 For car-mesh visual checks, don't squint at dark garage screenshots: load
 the game page in headless chromium, then `page.evaluate` a dynamic

@@ -23,6 +23,7 @@ document.getElementById("game").appendChild(renderer.domElement);
 // count. Frame timing is the only handle the smoke tests have on it.
 window.__renderer = renderer;
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 6000);
+window.__camera = camera; // debug handle: lets the smoke tests project world points to pixels
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();

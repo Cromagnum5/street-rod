@@ -311,7 +311,8 @@ export class Track {
     roadGeo.setAttribute("position", new THREE.Float32BufferAttribute(roadPos, 3));
     roadGeo.setIndex(roadIdx);
     roadGeo.computeVertexNormals();
-    const road = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ color: 0x3a3a3e }));
+    const road = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ color: palette.road }));
+    road.name = "roadRibbon"; // the contrast check looks it up by name
     road.receiveShadow = true;
     scene.add(road);
 
@@ -465,9 +466,18 @@ export class Track {
 }
 
 // Sky/time-of-day palettes for race variety.
+// `road` is the asphalt, and it is picked against `ground` and `sun`, not in
+// isolation: the ribbon is Lambert, so it wears the sun's colour. One neutral
+// grey for all four is what made dusk's road go brown (an orange sun at 1.6 on
+// neutral grey lands almost exactly on dusk's brown ground) and left night's
+// asphalt muddy against the dark green. So the warm-sun palettes get a cooler
+// road to push back, and night's runs lighter than its ground rather than
+// darker — realism would say asphalt is black at midnight, but the road has to
+// read. (The unlit dash/edge instances carry night on their own; they're
+// MeshBasic, so they stay bright whatever the hour.)
 export const PALETTES = [
-  { name: "noon",   sky: 0x7ec8f2, fog: 0xb8dcf0, ground: 0x8a9a4e, tree: 0x3e7a34, mountain: 0x7d8aa0, sun: 0xfff2cc, ambient: 0.75, horizon: 0xdfeefb },
-  { name: "dusk",   sky: 0x2e2450, fog: 0xd88a5a, ground: 0x6b5c40, tree: 0x2e4a2a, mountain: 0x4a3a5e, sun: 0xff9040, ambient: 0.55, horizon: 0xf0a060 },
-  { name: "desert", sky: 0x9fd0ee, fog: 0xe8d5ae, ground: 0xc2a86a, tree: 0x5e7a3a, mountain: 0xb08858, sun: 0xfff8dd, ambient: 0.8, horizon: 0xf2e4bc },
-  { name: "night",  sky: 0x0a0e24, fog: 0x141a36, ground: 0x24302a, tree: 0x18301c, mountain: 0x1c2438, sun: 0xcfd8ff, ambient: 0.35, horizon: 0x283454 },
+  { name: "noon",   sky: 0x7ec8f2, fog: 0xb8dcf0, ground: 0x8a9a4e, road: 0x3a3a3e, tree: 0x3e7a34, mountain: 0x7d8aa0, sun: 0xfff2cc, ambient: 0.75, horizon: 0xdfeefb },
+  { name: "dusk",   sky: 0x2e2450, fog: 0xd88a5a, ground: 0x6b5c40, road: 0x33313c, tree: 0x2e4a2a, mountain: 0x4a3a5e, sun: 0xff9040, ambient: 0.55, horizon: 0xf0a060 },
+  { name: "desert", sky: 0x9fd0ee, fog: 0xe8d5ae, ground: 0xc2a86a, road: 0x4e4740, tree: 0x5e7a3a, mountain: 0xb08858, sun: 0xfff8dd, ambient: 0.8, horizon: 0xf2e4bc },
+  { name: "night",  sky: 0x0a0e24, fog: 0x141a36, ground: 0x24302a, road: 0x3e434f, tree: 0x18301c, mountain: 0x1c2438, sun: 0xcfd8ff, ambient: 0.35, horizon: 0x283454 },
 ];
