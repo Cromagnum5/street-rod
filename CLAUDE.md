@@ -146,10 +146,9 @@ sound is synthesized live with the Web Audio API.
   the surface
   (`y`/`grade`/`groundPitch`, no vertical velocity — no jumps by design),
   race-mesh roots take ground pitch (their `rotation.order` is `"YXZ"` for
-  the same reason as wheels), the camera rides the car's road height as a
-  rigid offset (see the camera entry — it used to be a slow-smoothed copy,
-  `race.camY`, and that was backwards), and dash/edge-line instances pitch
-  with `grade` so they lie on the slope. The ground is a terrain skirt riding
+  the same reason as wheels), the camera is a boom whose height tracks the road
+  under the car while its aim stays locked on the car (see the camera entry),
+  and dash/edge-line instances pitch with `grade` so they lie on the slope. The ground is a terrain skirt riding
   the ribbon (flat at road height to ±62 m, past the tree band, then
   falling to y=−1.2 by ±100 m to dip under the 9000 m plane — same
   material, so the seam is invisible). Two skirt constraints: the outer
@@ -663,33 +662,64 @@ sound is synthesized live with the Web Audio API.
   deliberately tight (Jason, 2026-07-10): `4.3 + camSpeed * 0.0065`, height
   scaled to keep the same look-down angle. Don't pull it back out; any
   closer needs the lookAt point pulled in too.
-  **The rig hangs off the car's road height as a RIGID offset — height and
-  aim point both — and smoothing that height is backwards** (Jason
-  playtested + approved 2026-07-17, "feels good"). It used to ride
-  `race.camY`, a gain-4 lagged copy of car y, added pre-emptively so a
-  future crest wouldn't lurch the frame. It does the opposite: a lagged
-  height decouples the camera from the car, and then **the car is what
-  slides up and down the screen**. A rigid offset reproduces the flat-road
-  geometry exactly every frame, so the car *cannot* move in frame — the
-  hills translate the whole rig instead, and `CAM_FOLLOW`'s lerp damps y
-  along with x/z, which is all this axis needs. Measured (12 seeds, maxed
-  'Cuda at 150 mph, car's vertical position in frame as NDC drift; hills
-  scaled ×N by scaling `track.points[i].y`, which preserves crest count and
-  wavelength): shipped hills 0.137 → **0.019**, ×3 hills 0.408 → **0.055**,
-  ×5 hills 0.675 → **0.091**. Not a trade against seasickness — rigid's max
-  camera vertical velocity is *identical* (5.88 vs 5.76 m/s at ×3; it moves
-  the same, just in sync) and its per-frame steps are *smaller* (max 0.0022
-  vs 0.0051, RMS 5x lower). Reversals/s go UP (3.8 → 6.0) and that metric is
-  a red herring here: it counts direction flips regardless of size, so
-  deleting a big slow drift leaves small noise that reverses often — measure
-  step *size*, not flips. Don't reintroduce a second height smoother.
-  Terrain clearance is a non-issue and the arithmetic trap is worth knowing:
-  the camera never clips a crest, because what matters is grade × the
-  camera's trail (~11.4 m at 150 mph) = 1.1 m at 10%, **not** the road's
-  vertical speed (6.7 m/s) — the 2.15 m ride height covers it. Worst
-  measured clearance at ×3 is 1.79 m rigid (1.01 m for the old lagged
-  version — the lag hurt this too). Margin runs out around ×5 / 17% grades;
-  a terrain-height floor under the camera is the fix *then*, not before.
+  **The camera is a boom, and the one inviolable rule is the GIMBAL: the aim
+  point stays locked on the car (`lookAt` at `p.y + 1.1`) no matter what the
+  boom's position does.** The camera *position* is free to float for drama; the
+  car's spot in frame is not, and the aim lock is what protects it. This was
+  learned the hard way (all 2026-07-17): the height first rode `race.camY`, a
+  lagged copy of car y — added to `camGoal.y` so the *whole rig including the
+  aim* lagged. That decouples the camera from the car and **the car slides up
+  and down the screen** (measured: NDC vertical drift 0.137 flat → 0.408 at ×3
+  hills → 0.675 at ×5, i.e. the car sliding through ~⅔ of screen height). Lock
+  the aim on `p.y` and float only the position, and the same float moves the
+  *world* while the car sits still (drift back to 0.05–0.09). Rule of thumb for
+  any future camera drama: **move the camera, never the car in frame** — if a
+  change touches the `lookAt` target's y with anything lagged, it's the bug.
+  With that rule the position does three things, all Jason's asks (playtested +
+  approved 2026-07-17):
+  1. **Directly behind, no side-to-side.** The `CAM_FOLLOW` lerp trails the
+     goal; through a turn the goal whips laterally and the camera swings wide
+     with it (~0.35 m of lateral drift). Kill it by projecting the camera's
+     horizontal offset onto the car's travel line and keeping only the *behind*
+     component — the longitudinal trail (the good half of the same lag) survives,
+     the lateral swing is projected out. Measured 0.096 → **0.000** car-swing in
+     frame, zero per-frame jolt, even steering hard the whole race.
+  2. **A gentle dip as the nose tips up.** `camY` still lags the road height, but
+     only the camera's own y rides it (not the aim), so the boom dips slightly
+     entering a climb. Kept because Jason likes the drama, just softened —
+     `CAM_FLOAT` 6 → 10 roughly halves it (measured dip ~0.12 m).
+  3. **Rise to see over the crest — after a beat** (the headline ask: "moving up
+     high vertically as you are climbing... visibility into curves that are coming
+     after cresting the hill", refined to "camera drop as starting up, then a beat
+     of delay, then a gentle rise as climbing and nearing the crest"). `camLift` =
+     `max(0, camGradeSm) · CAM_CLIMB_LIFT` (15), where `camGradeSm` is a *lagged*
+     grade (`CAM_GRADE_LAG` 2) — that lag is the whole trick. Cascading it into
+     the lift's own follow (`CAM_LIFT_UP` 3 / `CAM_LIFT_DOWN` 1.5) makes an
+     S-curve: **zero initial slope**, so the rise starts a beat late instead of
+     ramping the instant the grade appears, which lets the `camY` dip (a faster
+     lag) land first. The measured hill-entry sequence at a clean 10% step, as net
+     camera-vs-road: −0.36 m at +0.2 s (dropped), −0.02 m at +0.5 s (the beat,
+     back to neutral), +0.49 m at +1.0 s (rising) — drop, beat, rise. Slow release
+     holds the height across the crest, then it settles. Grade-gated, so descents
+     and flats are a plain chase cam (grade 0 → lift 0).
+     **Height is deliberately modest** — a first pass at `CAM_CLIMB_LIFT` 30 (~3 m
+     at a 10% climb) killed the sense of speed, so it's halved to 15 (~1.5 m). The
+     visibility gain is real but smaller for it (the 30 version bought +22 m of
+     road past the crest; half-height buys proportionally less), a trade Jason
+     chose — speed sensation over sightline. `CAM_CLIMB_LIFT` is the height knob,
+     `CAM_GRADE_LAG` the delay knob (lower = longer beat). On a short steep bump
+     the beat compresses (the grade slams up, `camGradeSm` catches it fast); it's
+     the sustained climbs where the drop/beat/rise reads cleanly, which is the
+     case the feel was tuned for.
+  y is driven entirely by that height sum and *overwritten* after the lerp (the
+  lerp would add a vertical trail-lag that delays the lift). Terrain clearance
+  stays healthy (~1.77 m worst at ×3, lift on) — the arithmetic trap is worth
+  keeping though: a crest is cleared by grade × the camera's trail (~11.4 m at
+  150 mph) = 1.1 m at 10%, **not** the road's vertical speed (6.7 m/s). The
+  drone-float experiment in between (float the position with the aim locked but
+  *no* climb lift, `CAM_FLOAT` as the only knob) is what proved the aim-lock rule
+  and found the floor where lag sinks the camera through the road on climbs
+  (below ~gain 3); the climb-lift model supersedes it.
   **The real chase-distance knob is `CAM_FOLLOW`, not that formula**
   (measured 2026-07-12 after Jason said the camera was still way back at
   180 mph). `camera.position.lerp(camGoal, 1 - exp(-dt*CAM_FOLLOW))` is an

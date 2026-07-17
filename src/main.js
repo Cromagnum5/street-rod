@@ -494,7 +494,12 @@ function showCard(idx, dir) {
 
 const race = {};
 window.__race = race; // debug handle for the headless smoke tests
-const CAM_FOLLOW = 10; // chase-camera follow gain; steady-state trail = speed / CAM_FOLLOW
+const CAM_FOLLOW = 10;     // chase-camera follow gain; steady-state trail = speed / CAM_FOLLOW
+const CAM_FLOAT = 10;      // how lazily the boom's height chases the road: the small dip as the nose tips up
+const CAM_CLIMB_LIFT = 15; // metres of boom rise per unit uphill grade — the "see over the crest" lift
+const CAM_GRADE_LAG = 2;   // lag on the grade that drives the lift: the "beat" before the rise
+const CAM_LIFT_UP = 3;     // lift gain climbing (the rise, once the beat has passed)
+const CAM_LIFT_DOWN = 1.5; // lift gain settling (slow release: hold the height across the crest)
 
 // Shadows: only the cars cast (nothing in track.js is flagged), so the map only
 // ever holds two cars and the ortho box only has to cover them — that's what
@@ -627,6 +632,9 @@ function buildRaceScene(opp) {
   race.prevSpeed = 0;
   race.accelSm = 0;
   race.camSpeed = 0;
+  race.camY = 0; // boom height; the launch zone is pinned flat so 0 is the road
+  race.camLift = 0; // extra boom height banked while climbing (see-over-the-crest lift)
+  race.camGradeSm = 0; // lagged grade that drives the lift, so the rise trails the dip
   race.lastClunk = -9;
   race.aiRev = 0;
   race.aiRevT = 0.3 + Math.random() * 0.6; // first blip lands shortly after staging
@@ -727,21 +735,50 @@ function raceTick(t, dt) {
   // framing follows a smoothed speed, extra slow once the race is over, so
   // braking to a stop past the finish line doesn't rubber-band the camera
   race.camSpeed += (p.speed - race.camSpeed) * Math.min(1, dt * (race.over ? 1.0 : 6));
-  // The rig hangs off the car's road height as a RIGID offset — height and aim
-  // point both. This used to ride a lagged copy (`camY`, gain 4) to keep crests
-  // from lurching the frame, which is backwards: a lagged height decouples the
-  // camera from the car, and then the CAR is what slides up and down the screen.
-  // A rigid offset reproduces the flat-road geometry exactly at every instant,
-  // so the car cannot move in frame — the hills translate the whole rig instead.
-  // The lerp below already damps y along with x/z, which is all the smoothing
-  // this axis needs. Don't reintroduce a second height smoother.
+  // Vertical: a camera boom that climbs with the hill (Jason, 2026-07-17). Two
+  // terms, and the GIMBAL stays locked on the car through both (aim is `p.y`
+  // below) — that lock is the whole safety margin, because a lagged *aim* is
+  // what made the car itself slide 20% down the screen last time. Move the
+  // camera, never the car in frame.
+  //  - camY lags the road height, so the boom dips slightly as the nose first
+  //    tips up. Kept deliberately (Jason likes the drama), just gentler than the
+  //    pure-drone version — CAM_FLOAT raised 6 -> 10 roughly halves the dip.
+  //  - camLift flies the boom UP while the road under the car climbs, to see
+  //    over the crest into the curves beyond, but deliberately AFTER a beat so
+  //    the dip lands first (Jason, 2026-07-17: "camera drop as starting up, then
+  //    a beat of delay, then a gentle rise as climbing and nearing the crest").
+  //    The delay is a lag on the grade that drives the lift (`camGradeSm`);
+  //    cascaded into the lift's own follow it makes an S-curve — zero initial
+  //    slope, so the rise starts a beat late instead of instantly. Slow release
+  //    holds the height across the crest, then it settles on the far side.
+  //    Height is half the first pass (Jason: the rise was killing the sense of
+  //    speed) — `CAM_CLIMB_LIFT` 30 → 15, ~1.5 m at a 10% climb. Grade-gated, so
+  //    descents and flats are a plain chase cam (grade 0 -> lift 0).
+  race.camY += (p.y - race.camY) * Math.min(1, dt * CAM_FLOAT);
+  race.camGradeSm += (p.grade - race.camGradeSm) * Math.min(1, dt * CAM_GRADE_LAG);
+  const targetLift = Math.max(0, race.camGradeSm) * CAM_CLIMB_LIFT;
+  const liftGain = targetLift > race.camLift ? CAM_LIFT_UP : CAM_LIFT_DOWN;
+  race.camLift += (targetLift - race.camLift) * Math.min(1, dt * liftGain);
+  const camHeight = race.camY + 2.15 + race.camSpeed * 0.002 + race.camLift;
+
   const dist = 4.3 + race.camSpeed * 0.0065;
-  const camGoal = new THREE.Vector3(p.x - fx * dist, p.y + 2.15 + race.camSpeed * 0.002, p.z - fz * dist);
+  const camGoal = new THREE.Vector3(p.x - fx * dist, camHeight, p.z - fz * dist);
   // CAM_FOLLOW is the real chase-distance knob: an exponential smoother chasing a
   // target moving at v settles v/gain behind it, so this adds 0.1 s of travel (8 m
   // at 180 mph) on top of `dist` — 30x the dolly term. Lower it and the camera
   // falls back at speed; raise it and the chase goes rigid.
   camera.position.lerp(camGoal, 1 - Math.exp(-dt * CAM_FOLLOW));
+  // Directly behind, no side-to-side (Jason, 2026-07-17: "stay directly behind
+  // the car"). That same CAM_FOLLOW lag swings the camera wide through a turn —
+  // the goal whips laterally and the camera trails it, ~0.35 m of drift. Keep
+  // only the component straight behind the travel line and project the lateral
+  // part out; the trail (the good, longitudinal half of the lag) survives. y is
+  // driven entirely by camHeight, so overwrite it rather than let the lerp add a
+  // vertical trail-lag that would delay the climb lift.
+  const behind = Math.min(-1, (camera.position.x - p.x) * fx + (camera.position.z - p.z) * fz);
+  camera.position.x = p.x + fx * behind;
+  camera.position.z = p.z + fz * behind;
+  camera.position.y = camHeight;
   camera.lookAt(p.x + fx * 7, p.y + 1.1, p.z + fz * 7);
   // gentle widening with speed; the drama comes from a small acceleration kick
   // (zoom-out surge on launch/passing, slight tighten under braking)
