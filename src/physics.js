@@ -7,6 +7,11 @@ import { PARTS, PART_KEYS } from "./data.js";
 export const IDLE_RPM = 850;
 export const REDLINE = 5800;
 
+// m/s². `grip`/`cornerGrip` are accelerations (velYawMax = grip/speed, so at the
+// limit lateral accel == grip; grip*mass is used as a force), which means
+// dividing by this turns them into honest skidpad G for the garage's stat line.
+export const GRAV = 9.8;
+
 // Suspension: the body is a spring-damper chasing chassis acceleration.
 // Softness ~1 (stock old iron) leans hard and wobbles; ~0.15 (race) sits flat.
 export const ROLL_MAX = 0.11;   // rad of body roll at the grip limit, softness 1
@@ -217,7 +222,7 @@ export class CarSim {
     // more the faster you're going, and deep in it you can outrun your own vmax
     force -= st.drag * this.speed * this.speed * (1 - DRAFT_MAX * this.draft);
     force -= 0.18 * st.mass; // rolling resistance
-    force -= st.mass * 9.8 * (this.grade / Math.hypot(1, this.grade)); // gravity along the slope (0 until hills)
+    force -= st.mass * GRAV * (this.grade / Math.hypot(1, this.grade)); // gravity along the slope (0 until hills)
     if (brake > 0) force -= brake * st.mass * 8;
     if (this.offroad) force -= st.mass * (1.2 + this.speed * 0.06);
 
@@ -274,7 +279,7 @@ export class CarSim {
     const zeta = 0.95 - 0.45 * soft;    // damping ratio
     // lean follows the real lateral g (the path bend), not the loose nose yaw
     const rollTarget = (velYaw * this.speed / st.grip) * soft * ROLL_MAX;
-    const longG = Math.max(-1.1, Math.min(1.1, longAccel / 9.8));
+    const longG = Math.max(-1.1, Math.min(1.1, longAccel / GRAV));
     const pitchTarget = -longG * soft * PITCH_MAX;
     this.rollVel += ((rollTarget - this.roll) * wn * wn - 2 * zeta * wn * this.rollVel) * dt;
     this.roll += this.rollVel * dt;

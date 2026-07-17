@@ -144,7 +144,19 @@ sound is synthesized live with the Web Audio API.
   automatic gearbox (RPM drives the audio), sprung-body roll/pitch (see
   suspension notes below). `effectiveStats(tier, parts)` merges base car +
   part multipliers; its `cornerGrip` (roll-adjusted) feeds the AI planner
-  and the garage GRIP stat.
+  and the garage LATERAL GRIP stat.
+  **`grip`/`cornerGrip` are accelerations in m/s²**, not an abstract score:
+  `velYawMax = gripAvail / speed`, so at the limit lateral accel *is* grip, and
+  `grip * mass` is used directly as a force. So `cornerGrip / GRAV` is honest
+  skidpad G — which is what the garage shows (Jason, 2026-07-16: "change the
+  grip stat to something people would intuitively understand... sports cars brag
+  about having around 1 G"). It had been printed raw as "7.2 g-units", which was
+  neither g nor a unit. No fudge factor was needed and none should be added: the
+  ladder falls out at 0.54 G for a stock Model A on bias-plies, 0.88 G for a
+  stock 'Cuda, 1.00 G for a maxed Deuce (exactly the sports-car brag) and 1.40 G
+  for a maxed 'Cuda on slicks — real numbers for real cars, top to bottom. If a
+  tier's `grip` in data.js is ever retuned, this stat is the sanity check: a
+  street car outside ~0.5–1.4 G is telling you the physics drifted, not the UI.
 - `src/ai.js` — pure-pursuit steering to a lookahead point, corner-speed
   planning from curvature, skill-scaled reaction delay, light rubber band.
 - `src/audio.js` — `EngineVoice`: firing frequency = rpm/60 × cyl/2 into a
@@ -309,6 +321,53 @@ sound is synthesized live with the Web Audio API.
   sorted board. One wrinkle: the crown peer's `bonus` is recomputed after his
   build is forced to 3 (his *wager* deliberately stays the one the top slot
   rolled — pre-existing behavior).
+- **Sizing him up is a side-by-side: your card, then his** (Jason's ask,
+  2026-07-16: "improve the comparison and debate a player makes when choosing an
+  opponent"). The opponent screen used to be his card alone against a dark
+  garage, so every comparison was from memory — you had to remember your own
+  pips from the shop one keypress ago. Now the garage panel *is* the player's
+  card: `#garagePanel` lives outside `#garageScreen` and stays up through
+  OPPONENTS, where `setPanelMode(true)` shrinks it into a 320 px card at the left
+  of the stage. Load-bearing bits:
+  - **It's the same element, so the box genuinely travels** — that's the whole
+    point of the animation, and it's why the panel is sized by `height` and not
+    `bottom` (a `bottom` can't transition into a card). Two mechanisms, kept
+    apart on purpose: geometry is a CSS transition on left/top/width/height;
+    contents cross-fade (`.morphing`) and swap at the bottom of the fade.
+    Morphing the contents *in place* would mean animating a 6-row shopping list
+    into a 3×2 grid of pips — the fade costs 0.15 s and the box moves through all
+    of it. Verified playing by sampling the rect from inside the page (mid-flight
+    at `l:177 w:344 h:679`, contents at opacity 0.22): **a screenshot cannot
+    catch this** — under swiftshader a frame costs ~400 ms, so a `waitForTimeout`
+    of 170 ms captures the settled state and reads like a broken transition.
+  - **The card's geometry is measured, never duplicated.** `setPanelMode` reads
+    `#cardStage`'s rect and sits beside it (`PLAYER_CARD_W` 320 +
+    `PLAYER_CARD_GAP` 96, which is what clears `#arrL` at the stage's −60 px).
+    `#opponentScreen`'s `padding-left: 416px` (= W + GAP) reserves the column,
+    and because the stage is flex-centered in what's left, the *pair* lands
+    centered for free. Measure it **after** `showCard`, not before: an empty
+    `#cardCounter` rides the flex column 7 px off and the cards land misaligned.
+    Checked 1024×768 → 1920×1080: both cards share a top and bottom, gap holds at
+    96, nothing overlaps the arrow.
+  - **One part order everywhere.** `buildGridHTML` is shared by both cards, so
+    the pips sit in the same spot on each and you compare without re-reading the
+    labels. `.buildGrid` is `grid-auto-flow: column` — filling by row (the old
+    `.oppBuild`) ran ENGINE / INDUCTION across the top, so reading the left
+    column top-to-bottom gave ENGINE / EXHAUST / SUSPENSION: a different order
+    than the garage's list, which is the thing Jason caught. Column-major makes
+    both screens read in `PART_KEYS` order down one column and on to the next.
+    If a seventh part is ever added, `grid-template-rows: repeat(3, auto)` is the
+    line to fix.
+  - The player card carries a **portrait** (`carPortrait`, same offscreen
+    renderer and angle as his) — the visible-upgrades work is what makes that a
+    real A/B: a blower against a flat hood. Both frames are `.carPhoto` at 150 px
+    so the two cars are shot alike and the pair reads as a set; the garage itself
+    skips the photo, the turntable is already showing the real thing. The boss
+    note is dropped on the card (on that screen the boss *is* a card).
+  Deliberately NOT done: hp / top speed / grip on the *opponent's* card. The
+  difficulty signal is build pips + stars by design (see the board entry) — the
+  player's stats stay visible so you can price his pips against your own numbers,
+  which is the debate; handing over his stat line would make it arithmetic.
 - Balance target (2026-07-16, superseding the 07-15 "boss is a wall"): a
   build-level gap decides street races (see the board entry), and **the boss
   is pace-matched to the top card of your own class**. Jason playtested the

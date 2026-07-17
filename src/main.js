@@ -6,7 +6,7 @@ import { CAR_TIERS, PARTS, PART_KEYS, BOSSES, STARTING_MONEY, SAVE_KEY } from ".
 import { makeRoster, aiParts, carSaleValue, partPrice, freshParts, wagerLoss, buildLevel } from "./economy.js";
 import { buildCar } from "./carmesh.js";
 import { Track, PALETTES, ROAD_HALF_W } from "./track.js";
-import { CarSim, effectiveStats, topSpeed, resolveContact, resolveDraft, REDLINE, IDLE_RPM, ROLL_MAX } from "./physics.js";
+import { CarSim, effectiveStats, topSpeed, resolveContact, resolveDraft, REDLINE, IDLE_RPM, ROLL_MAX, GRAV } from "./physics.js";
 import { AIDriver } from "./ai.js";
 import * as sfx from "./audio.js";
 
@@ -144,13 +144,20 @@ let garageSel = 0;
 let garageVoice = null;
 let garageRev = 0;
 let garageCarMesh = null;
+// The garage panel doubles as the player's card on the opponent screen; this is
+// which of the two it's currently rendering. See setPanelMode.
+let panelCompact = false;
 
 states.GARAGE = {
   enter() {
+    // animate the card back into the panel only if it's already on screen (i.e.
+    // we came back from OPPONENTS); arriving from TITLE/RESULTS it's hidden
+    const animate = !el("garagePanel").classList.contains("hidden");
+    show("garagePanel");
     show("garageScreen");
     garageSel = 0;
     buildGarageScene();
-    renderGaragePanel();
+    setPanelMode(false, animate);
     if (!garageVoice) garageVoice = new sfx.EngineVoice(soundSpec(playerTier(), player.parts), 0.16);
     garageVoice.setSpec(soundSpec(playerTier(), player.parts));
     garageVoice.start();
@@ -253,13 +260,38 @@ function buildGarageScene() {
   };
 }
 
+// The build block both cards wear. Shared so the player's parts and the
+// opponent's are listed in one order — PART_KEYS, same as the garage's list —
+// and land in the same spot on both cards, which is the whole point: you compare
+// pips against pips without re-reading the labels.
+function buildGridHTML(parts) {
+  return PART_KEYS.map((k) => {
+    const lvl = parts[k] ?? 0;
+    const boxes = [0, 1, 2].map((j) =>
+      `<span class="${j < lvl ? "" : "off"}">&#9632;</span>`).join("");
+    return `<div class="bRow"><span class="bName">${PARTS[k].label}</span><span class="pips">${boxes}</span></div>`;
+  }).join("");
+}
+
 function renderGaragePanel() {
   const tier = playerTier();
+  el("garageTitle").textContent = panelCompact ? "YOUR RIDE" : "THE GARAGE";
   el("garageCarName").textContent = tier.name;
   el("garageMoney").textContent = `CASH  $${player.money}`;
+  // photo only on the card: in the garage the turntable is already showing the
+  // real thing, but next to the opponent it's the A/B that sells the comparison
+  const photo = el("playerPhoto");
+  photo.className = panelCompact ? "carPhoto" : "";
+  photo.innerHTML = panelCompact
+    ? `<img src="${carPortrait(player.carTier, undefined, player.parts)}" alt="${tier.name}">`
+    : "";
+
   const list = el("partList");
+  list.className = panelCompact ? "buildGrid" : "";
   list.innerHTML = "";
-  PART_KEYS.forEach((key, i) => {
+  if (panelCompact) {
+    list.innerHTML = buildGridHTML(player.parts);
+  } else PART_KEYS.forEach((key, i) => {
     const cur = player.parts[key] ?? 0;
     const next = PARTS[key].levels[cur + 1];
     const price = next ? partPrice(key, cur + 1, player.carTier) : 0;
@@ -284,15 +316,65 @@ function renderGaragePanel() {
   const statRows = [
     ["POWER", `${hp} hp`],
     ["TOP SPEED", `~${vmax} mph`],
-    ["GRIP", `${stats.cornerGrip.toFixed(1)} g-units`],
+    // skidpad G, the number a car magazine quotes and a driver already has a
+    // feel for (~1 G is the sports-car brag). cornerGrip is a lateral
+    // acceleration, so this is a real unit conversion, not a rescale.
+    ["LATERAL GRIP", `${(stats.cornerGrip / GRAV).toFixed(2)} G`],
     ["BODY LEAN", `~${(stats.softness * ROLL_MAX * 57.3).toFixed(1)}&deg;`],
     ["GEARS", `${stats.gears}-speed`],
   ];
   el("garageStats").innerHTML =
     statRows.map(([l, v]) => `<div class="statRow"><span class="sLabel">${l}</span><span class="sVal">${v}</span></div>`).join("") +
-    (nextBoss
-      ? `<div class="statNote boss">NEXT BOSS: ${nextBoss}</div>`
-      : `<div class="statNote">YOU HOLD THE CROWN &#128081;</div>`);
+    (panelCompact // the boss note is shop talk; on the card the boss is a card
+      ? ""
+      : nextBoss
+        ? `<div class="statNote boss">NEXT BOSS: ${nextBoss}</div>`
+        : `<div class="statNote">YOU HOLD THE CROWN &#128081;</div>`);
+}
+
+// ---- the panel morph -------------------------------------------------------
+//
+// The garage panel and the player's card are the same element, so the box
+// genuinely travels and resizes rather than one thing vanishing and another
+// fading in. Two mechanisms, and they're separate on purpose: the geometry is a
+// CSS transition (left/top/width/height — that's why the panel is sized by
+// `height` and not `bottom`, which can't animate into a card), while the
+// contents cross-fade and swap at the bottom of the fade. Morphing the contents
+// in place would mean animating a 6-row shopping list into a 3x2 grid of pips;
+// the fade costs 0.15 s and the box is moving through all of it.
+const PLAYER_CARD_W = 320;
+const PLAYER_CARD_GAP = 96; // clears #arrL at the stage's left edge (-60px)
+let morphT = null;
+
+function setPanelMode(compact, animate = true) {
+  const panel = el("garagePanel");
+  panelCompact = compact;
+  clearTimeout(morphT);
+  if (!animate) panel.style.transition = "none";
+  if (compact) {
+    // measure the stage instead of duplicating its geometry here — the card just
+    // has to sit beside it, and #opponentScreen's padding-left reserves the room
+    const s = el("cardStage").getBoundingClientRect();
+    panel.style.left = `${Math.max(16, s.left - PLAYER_CARD_GAP - PLAYER_CARD_W)}px`;
+    panel.style.top = `${s.top}px`;
+    panel.style.width = `${PLAYER_CARD_W}px`;
+    panel.style.height = `${s.height}px`;
+  } else {
+    // back to the stylesheet's full-height panel
+    panel.style.left = panel.style.top = panel.style.width = panel.style.height = "";
+  }
+  panel.classList.toggle("compact", compact);
+  if (!animate) {
+    panel.getBoundingClientRect(); // flush, so the cleared transition can't play
+    panel.style.transition = "";
+    renderGaragePanel();
+    return;
+  }
+  panel.classList.add("morphing");
+  morphT = setTimeout(() => {
+    renderGaragePanel();
+    panel.classList.remove("morphing");
+  }, 150);
 }
 
 // ---------------------------------------------------------------- OPPONENTS
@@ -306,6 +388,10 @@ states.OPPONENTS = {
     show("opponentScreen");
     cardEl = null;
     showCard(0, 0);
+    // after showCard, not before: setPanelMode measures the stage to line the
+    // player's card up with it, and the stage only settles once #cardCounter has
+    // its text — an empty counter rides the flex column 7px off
+    setPanelMode(true);
   },
   exit() {
     hide("opponentScreen");
@@ -366,18 +452,12 @@ function cardHTML(opp) {
   const stars = Math.max(1, Math.round(opp.skill * 5));
   const carName = CAR_TIERS[opp.carTier].name;
   const build = aiParts(opp, player);
-  const buildRows = PART_KEYS.map((k) => {
-    const lvl = build[k] ?? 0;
-    const boxes = [0, 1, 2].map((j) =>
-      `<span class="${j < lvl ? "" : "off"}">&#9632;</span>`).join("");
-    return `<div class="bRow"><span class="bName">${PARTS[k].label}</span><span class="pips">${boxes}</span></div>`;
-  }).join("");
   return `
     <div class="oppName">${opp.name}</div>
     <div class="oppCar">${carName}</div>
-    <div class="oppPhoto"><img src="${carPortrait(opp.carTier, opp.carColor, build)}" alt="${carName}"></div>
+    <div class="carPhoto"><img src="${carPortrait(opp.carTier, opp.carColor, build)}" alt="${carName}"></div>
     <div class="oppFlavor">&ldquo;${opp.flavor}&rdquo;</div>
-    <div class="oppBuild">${buildRows}</div>
+    <div class="buildGrid">${buildGridHTML(build)}</div>
     <div class="oppStats">
       <div>SKILL <span class="stars"><span class="lit">${"&#9733;".repeat(stars)}</span>${"&#9734;".repeat(5 - stars)}</span></div>
       ${opp.boss
@@ -463,6 +543,10 @@ const tachoSegs = [];
 
 states.RACE = {
   enter(opp) {
+    // the player's card rides through OPPONENTS, so RACE is what takes it away;
+    // GARAGE.enter puts it back (and reads its hidden state to decide whether to
+    // animate the card back into a panel)
+    hide("garagePanel");
     buildRaceScene(opp);
     show("hud");
   },

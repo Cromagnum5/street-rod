@@ -113,11 +113,18 @@
   @keyframes blink { 50% { opacity: 0; } }
 
   /* ---------- Garage ---------- */
+  /* This panel is the player's box, and it lives on through OPPONENTS: there it
+     shrinks into a card beside the opponent's so the two builds sit side by side
+     (see setPanelMode). Geometry animates here, contents cross-fade in JS.
+     Height, not `bottom`, so the compact geometry can transition into it. */
   #garagePanel {
-    position: fixed; left: 24px; top: 24px; bottom: 24px; width: 380px;
+    position: fixed; left: 24px; top: 24px; height: calc(100vh - 48px); width: 380px;
     background: var(--paper); border: 1px solid var(--rule-strong); padding: 20px;
     display: flex; flex-direction: column; pointer-events: auto;
+    transition: left .34s ease, top .34s ease, width .34s ease, height .34s ease;
   }
+  #garagePanel > * { transition: opacity .15s linear; }
+  #garagePanel.morphing > * { opacity: 0; }
   #garagePanel h2 {
     font-size: 15px; font-weight: 700; letter-spacing: 2px;
     border-bottom: 1px solid var(--rule-strong); padding-bottom: 10px;
@@ -142,8 +149,29 @@
   .statNote.boss { color: var(--pink); }
   #garageHint { position: fixed; bottom: 26px; left: 0; right: 0; text-align: center; color: var(--dim); font-size: 12px; letter-spacing: .5px; }
   #garageHint b { color: var(--ink); font-weight: 600; }
+  /* compact = the player card on the opponent screen. Nothing here is for sale,
+     so the shop furniture goes: prices, the row cursor, the boss note. */
+  #garagePanel.compact .partRow { cursor: default; }
+
+  /* ---------- Build block (shared: player card + opponent card) ----------
+     Column-major on purpose: filling by row would run ENGINE / INDUCTION across
+     the top, so reading the left column top-to-bottom gave a different part
+     order than the garage's list. `grid-auto-flow: column` makes both screens
+     read in PART_KEYS order down one column and on to the next. */
+  .buildGrid {
+    margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, auto); grid-auto-flow: column;
+    column-gap: 18px; row-gap: 3px;
+  }
+  .buildGrid .bRow { display: flex; justify-content: space-between; align-items: baseline; }
+  .buildGrid .bName { font-size: 10px; letter-spacing: 1px; color: var(--dim); }
+  .buildGrid .pips { float: none; }
 
   /* ---------- Opponent cards ---------- */
+  /* the padding reserves the player card's column at the left and, since the
+     stage is flex-centered in what's left, lands the pair centered as a whole:
+     padding == PLAYER_CARD_W + PLAYER_CARD_GAP in main.js */
+  #opponentScreen { padding-left: 416px; }
   #cardStage { position: relative; width: 460px; height: 560px; perspective: 900px; }
   .oppCard {
     position: absolute; inset: 0; background: var(--paper); border: 1px solid var(--rule-strong);
@@ -157,19 +185,13 @@
     font-size: 13px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase;
     margin-top: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--rule);
   }
-  .oppCard .oppPhoto {
+  /* catalog photo frame, shared by both cards so the two cars are shot alike */
+  .carPhoto {
     margin-top: 14px; border: 1px solid var(--rule);
     background: radial-gradient(ellipse at 50% 68%, #1c1c1c 0%, #0a0a0a 75%);
   }
-  .oppCard .oppPhoto img { display: block; width: 100%; height: 150px; object-fit: contain; }
+  .carPhoto img { display: block; width: 100%; height: 150px; object-fit: contain; }
   .oppCard .oppFlavor { font-style: italic; color: var(--dim); margin-top: 14px; font-size: 14px; line-height: 1.6; }
-  .oppCard .oppBuild {
-    margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr;
-    column-gap: 18px; row-gap: 3px;
-  }
-  .oppCard .bRow { display: flex; justify-content: space-between; align-items: baseline; }
-  .oppCard .bName { font-size: 10px; letter-spacing: 1px; color: var(--dim); }
-  .oppCard .oppBuild .pips { float: none; }
   .oppCard .oppStats { margin-top: auto; font-size: 14px; line-height: 2; border-top: 1px solid var(--rule); padding-top: 10px; }
   .oppCard .stars { color: var(--ink); letter-spacing: 3px; }
   .oppCard .stars .lit { color: var(--gold); }
@@ -221,15 +243,19 @@
   </div>
 </div>
 
+<!-- The player's box. Lives outside #garageScreen because it stays on screen
+     through opponent select, where it shrinks into the player's card. -->
+<div id="garagePanel" class="hidden">
+  <h2 id="garageTitle">THE GARAGE</h2>
+  <div id="garageCarName"></div>
+  <div id="garageMoney"></div>
+  <div id="playerPhoto"></div>
+  <div id="partList"></div>
+  <div id="garageStats"></div>
+</div>
+
 <!-- Garage -->
 <div id="garageScreen" class="hidden">
-  <div id="garagePanel">
-    <h2>THE GARAGE</h2>
-    <div id="garageCarName"></div>
-    <div id="garageMoney"></div>
-    <div id="partList"></div>
-    <div id="garageStats"></div>
-  </div>
   <div id="garageHint"><b>&uarr;&darr;</b> select part &nbsp;&bull;&nbsp; <b>ENTER</b> buy upgrade &nbsp;&bull;&nbsp; <b>SPACE</b> cruise the strip for a race</div>
 </div>
 
