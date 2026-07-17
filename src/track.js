@@ -31,6 +31,14 @@ const LINE_RELAX = 0.35;
 // can hold beats a perfect one he can't.
 const LINE_HALF_W = 3.6;
 
+// Telephone poles: spacing along the road, and how far off the centerline they
+// stand. POLE_OFF sits in the gap between the asphalt edge (ROAD_HALF_W) and
+// the tree line (ROAD_HALF_W + 6), so poles and pines never grow through each
+// other. Cars can reach them — the soft boundary is ROAD_HALF_W + 14 — but the
+// verge has never had collision and still doesn't.
+const POLE_STEP = 52;
+const POLE_OFF = 11;
+
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -384,29 +392,7 @@ export class Track {
     ground.position.x = mid.x; ground.position.z = mid.z;
     scene.add(ground);
 
-    // Trees / cacti along the route
-    const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6);
-    const crownGeo = new THREE.ConeGeometry(1.9, 4.2, 7);
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a4327 });
-    const crownMat = new THREE.MeshLambertMaterial({ color: palette.tree });
-    const nTree = Math.floor((PRE + this.length + POST) / 14);
-    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, nTree);
-    const crowns = new THREE.InstancedMesh(crownGeo, crownMat, nTree);
-    for (let i = 0; i < nTree; i++) {
-      const d = -PRE + rand() * (PRE + this.length + POST);
-      const { pos, heading } = sampleExt(d);
-      const side = rand() < 0.5 ? -1 : 1;
-      const off = ROAD_HALF_W + 6 + rand() * 45;
-      const nx = Math.cos(heading), nz = -Math.sin(heading);
-      const px = pos.x + nx * off * side, pz = pos.z + nz * off * side;
-      const sc = 0.7 + rand() * 0.9;
-      q.identity();
-      m4.compose(new THREE.Vector3(px, pos.y + 1.2 * sc, pz), q, new THREE.Vector3(sc, sc, sc));
-      trunks.setMatrixAt(i, m4);
-      m4.compose(new THREE.Vector3(px, pos.y + (2.4 + 1.6) * sc, pz), q, new THREE.Vector3(sc, sc, sc));
-      crowns.setMatrixAt(i, m4);
-    }
-    scene.add(trunks, crowns);
+    this._roadside(scene, palette, sampleExt, rand);
 
     // Distant mountains — rerolled off the road corridor: straighter seeds
     // put the track ends (plus the run-up/run-off) out among the cones, and
@@ -434,6 +420,138 @@ export class Track {
 
     // Start + finish banners
     for (const d of [8, this.length - 4]) this._banner(scene, d);
+  }
+
+  // ---------- roadside props ----------
+  // Everything on the verge, instanced. The palette picks the SET, not just the
+  // colours: recolouring a pine still leaves a pine, which is why the desert
+  // used to read as "the same forest, but tan" (its `tree` colour was doing all
+  // the work and the geometry none of it).
+  //
+  // Every geometry and material here is built per-scene on purpose. They look
+  // like obvious module-level constants, but disposeScene() in main.js disposes
+  // every geometry/material it traverses, so hoisting one out would free it on
+  // the first scene teardown and the NEXT race would render without it.
+  //
+  // None of this has collision, same as the trees always have: cars drive
+  // through the verge (the soft boundary is out at ROAD_HALF_W + 14), and that
+  // is deliberate — see the forgiving-physics intent.
+  _roadside(scene, palette, sampleExt, rand) {
+    const span = PRE + this.length + POST;
+    const props = palette.props;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    const p3 = new THREE.Vector3(), s3 = new THREE.Vector3();
+    const eul = new THREE.Euler(0, 0, 0, "YXZ");
+    const put = (im, i, x, y, z, sx, sy, sz, ry = 0) => {
+      eul.set(0, ry, 0);
+      q.setFromEuler(eul);
+      m4.compose(p3.set(x, y, z), q, s3.set(sx, sy, sz));
+      im.setMatrixAt(i, m4);
+    };
+    // the "prop:" prefix is what the placement check greps for — it has to be
+    // able to tell scenery from the dash/edge instances, which live ON the road
+    const add = (im, name) => { im.name = "prop:" + name; scene.add(im); };
+    // a spot in the verge: past the tree line, inside the flat part of the
+    // terrain skirt (it stays at road height to ±62, then falls away)
+    const spot = () => {
+      const { pos, heading } = sampleExt(-PRE + rand() * span);
+      const off = (ROAD_HALF_W + 6 + rand() * 45) * (rand() < 0.5 ? -1 : 1);
+      return { x: pos.x + Math.cos(heading) * off, y: pos.y, z: pos.z - Math.sin(heading) * off };
+    };
+
+    // ----- vegetation -----
+    const nVeg = Math.floor(span / 14);
+    const vegMat = new THREE.MeshLambertMaterial({ color: palette.tree });
+    if (props.veg === "cactus") {
+      // saguaro: one column, plus 0-2 arms that run out and then turn up. The
+      // arm is two cylinders sharing one transform rather than a merged
+      // geometry — two more draw calls, no merge helper to maintain.
+      const colGeo = new THREE.CylinderGeometry(0.34, 0.42, 4.6, 8);
+      const armHGeo = new THREE.CylinderGeometry(0.18, 0.18, 1.0, 7).rotateZ(Math.PI / 2).translate(0.5, 0, 0);
+      const armVGeo = new THREE.CylinderGeometry(0.18, 0.18, 1.7, 7).translate(1.0, 0.85, 0);
+      const cols = new THREE.InstancedMesh(colGeo, vegMat, nVeg);
+      const armsH = new THREE.InstancedMesh(armHGeo, vegMat, nVeg * 2);
+      const armsV = new THREE.InstancedMesh(armVGeo, vegMat, nVeg * 2);
+      let na = 0;
+      for (let i = 0; i < nVeg; i++) {
+        const { x, y, z } = spot();
+        const sc = 0.7 + rand() * 0.7;
+        put(cols, i, x, y + 2.3 * sc, z, sc, sc, sc);
+        for (const face of [0, Math.PI]) {
+          if (rand() < 0.45) {
+            const ah = y + (1.6 + rand() * 1.1) * sc, ry = face + rand() * 0.6 - 0.3;
+            put(armsH, na, x, ah, z, sc, sc, sc, ry);
+            put(armsV, na, x, ah, z, sc, sc, sc, ry);
+            na++;
+          }
+        }
+      }
+      armsH.count = na; armsV.count = na; // only draw the arms actually rolled
+      add(cols, "cactus"); add(armsH, "cactus-armh"); add(armsV, "cactus-armv");
+    } else {
+      const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6);
+      const crownGeo = new THREE.ConeGeometry(1.9, 4.2, 7);
+      const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x5a4327 }), nVeg);
+      const crowns = new THREE.InstancedMesh(crownGeo, vegMat, nVeg);
+      for (let i = 0; i < nVeg; i++) {
+        const { x, y, z } = spot();
+        const sc = 0.7 + rand() * 0.9;
+        put(trunks, i, x, y + 1.2 * sc, z, sc, sc, sc);
+        put(crowns, i, x, y + 4.0 * sc, z, sc, sc, sc);
+      }
+      add(trunks, "pine-trunk"); add(crowns, "pine-crown");
+    }
+
+    // ----- boulders -----
+    if (props.rock) {
+      const nRock = Math.floor(span / 26);
+      const rockGeo = new THREE.IcosahedronGeometry(1, 0);
+      const rocks = new THREE.InstancedMesh(rockGeo,
+        new THREE.MeshLambertMaterial({ color: props.rock, flatShading: true }), nRock);
+      for (let i = 0; i < nRock; i++) {
+        const { x, y, z } = spot();
+        const s = 0.6 + rand() * 1.7, ky = s * (0.55 + rand() * 0.4);
+        // sunk below the dirt line so it reads as bedded in, not a ball set down
+        put(rocks, i, x, y + s * 0.34, z, s, ky, s * (0.7 + rand() * 0.5), rand() * 6.283);
+      }
+      add(rocks, "rock");
+    }
+
+    // ----- scrub -----
+    if (props.scrub) {
+      const nScrub = Math.floor(span / 9);
+      const scrubGeo = new THREE.IcosahedronGeometry(0.55, 0);
+      const scrubs = new THREE.InstancedMesh(scrubGeo,
+        new THREE.MeshLambertMaterial({ color: props.scrub, flatShading: true }), nScrub);
+      for (let i = 0; i < nScrub; i++) {
+        const { x, y, z } = spot();
+        const s = 0.5 + rand();
+        put(scrubs, i, x, y + 0.16 * s, z, s, s * 0.6, s, rand() * 6.283);
+      }
+      add(scrubs, "scrub");
+    }
+
+    // ----- telephone poles -----
+    // Regular interval, one side, standing in the gap between the asphalt (7.5)
+    // and the tree line (13.5) — that gap is why a pole never grows out of a
+    // pine, so if the tree band ever moves inboard, move POLE_OFF with it.
+    if (props.pole) {
+      const nPole = Math.floor(span / POLE_STEP);
+      const poleGeo = new THREE.CylinderGeometry(0.13, 0.17, 8.4, 6);
+      const armGeo = new THREE.BoxGeometry(2.0, 0.13, 0.13);
+      const poleMat = new THREE.MeshLambertMaterial({ color: 0x6b5a45 });
+      const poles = new THREE.InstancedMesh(poleGeo, poleMat, nPole);
+      const arms = new THREE.InstancedMesh(armGeo, poleMat, nPole);
+      for (let i = 0; i < nPole; i++) {
+        const { pos, heading } = sampleExt(-PRE + i * POLE_STEP);
+        const x = pos.x + Math.cos(heading) * POLE_OFF, z = pos.z - Math.sin(heading) * POLE_OFF;
+        put(poles, i, x, pos.y + 4.2, z, 1, 1, 1);
+        // the crossarm lies across the road: local +x maps onto the road's left
+        // normal (cos h, -sin h) at exactly ry = heading
+        put(arms, i, x, pos.y + 7.5, z, 1, 1, 1, heading);
+      }
+      add(poles, "pole"); add(arms, "pole-arm");
+    }
   }
 
   _banner(scene, d) {
@@ -475,9 +593,17 @@ export class Track {
 // darker — realism would say asphalt is black at midnight, but the road has to
 // read. (The unlit dash/edge instances carry night on their own; they're
 // MeshBasic, so they stay bright whatever the hour.)
+// `props` is the roadside SET, not a colour scheme — see _roadside. `veg` picks
+// the geometry (a tan pine is still a pine); `rock`/`scrub` are colours doubling
+// as an on/off switch; `pole` is the period road furniture that sells a 1950s
+// two-lane more than anything else on the verge.
 export const PALETTES = [
-  { name: "noon",   sky: 0x7ec8f2, fog: 0xb8dcf0, ground: 0x8a9a4e, road: 0x3a3a3e, tree: 0x3e7a34, mountain: 0x7d8aa0, sun: 0xfff2cc, ambient: 0.75, horizon: 0xdfeefb },
-  { name: "dusk",   sky: 0x2e2450, fog: 0xd88a5a, ground: 0x6b5c40, road: 0x33313c, tree: 0x2e4a2a, mountain: 0x4a3a5e, sun: 0xff9040, ambient: 0.55, horizon: 0xf0a060 },
-  { name: "desert", sky: 0x9fd0ee, fog: 0xe8d5ae, ground: 0xc2a86a, road: 0x4e4740, tree: 0x5e7a3a, mountain: 0xb08858, sun: 0xfff8dd, ambient: 0.8, horizon: 0xf2e4bc },
-  { name: "night",  sky: 0x0a0e24, fog: 0x141a36, ground: 0x24302a, road: 0x3e434f, tree: 0x18301c, mountain: 0x1c2438, sun: 0xcfd8ff, ambient: 0.35, horizon: 0x283454 },
+  { name: "noon",   sky: 0x7ec8f2, fog: 0xb8dcf0, ground: 0x8a9a4e, road: 0x3a3a3e, tree: 0x3e7a34, mountain: 0x7d8aa0, sun: 0xfff2cc, ambient: 0.75, horizon: 0xdfeefb,
+    props: { veg: "pine", scrub: 0x6f7f3e, rock: null, pole: true } },
+  { name: "dusk",   sky: 0x2e2450, fog: 0xd88a5a, ground: 0x6b5c40, road: 0x33313c, tree: 0x2e4a2a, mountain: 0x4a3a5e, sun: 0xff9040, ambient: 0.55, horizon: 0xf0a060,
+    props: { veg: "pine", scrub: 0x4a4630, rock: null, pole: true } },
+  { name: "desert", sky: 0x9fd0ee, fog: 0xe8d5ae, ground: 0xc2a86a, road: 0x4e4740, tree: 0x5e7a3a, mountain: 0xb08858, sun: 0xfff8dd, ambient: 0.8, horizon: 0xf2e4bc,
+    props: { veg: "cactus", scrub: 0x8a8446, rock: 0x9c7f56, pole: true } },
+  { name: "night",  sky: 0x0a0e24, fog: 0x141a36, ground: 0x24302a, road: 0x3e434f, tree: 0x18301c, mountain: 0x1c2438, sun: 0xcfd8ff, ambient: 0.35, horizon: 0x283454,
+    props: { veg: "pine", scrub: 0x1e2a20, rock: null, pole: true } },
 ];

@@ -440,6 +440,32 @@ sound is synthesized live with the Web Audio API.
   the other half of night.
   Related, noticed and left alone: `horizon` is a dead palette key — declared on
   all four, read nowhere.
+- **Roadside props: the palette picks the SET, not the colours** (Jason's ask,
+  2026-07-16). The world was trees and mountains, and `palette.tree` was doing
+  all the work — the desert's "cacti" (the comment said cacti, the code said
+  `ConeGeometry`) were pines with a tan tint. `palette.props` now carries a real
+  set (`veg`: "pine" | "cactus"; `rock`/`scrub`: colours that double as an
+  on/off switch; `pole`), built by `Track._roadside`, all instanced.
+  Telephone poles are the piece that sells a 1950s two-lane more than anything
+  else on the verge. They march one side at `POLE_STEP` 52 m, standing at
+  `POLE_OFF` 11 m — deliberately in the gap between the asphalt (ROAD_HALF_W
+  7.5) and the tree line (ROAD_HALF_W + 6), which is the *only* reason a pole
+  never grows out of a pine: **if the tree band ever moves inboard, POLE_OFF
+  moves with it.** Nothing on the verge has collision, exactly as the trees
+  never have — cars drive through it and the soft boundary is out at 21.5.
+  Everything in `_roadside` is built per-scene, and it all looks hoistable to
+  module level. It isn't: `disposeScene` frees every geometry and material it
+  traverses, so a hoisted prop geometry would be freed on the first teardown and
+  the next race would render without it.
+  Objective placement check (8 seeds × 4 palettes): distance from every instance
+  to the *extended* centerline (props scatter through the PRE/POST run-up and
+  run-off, which `project()` cannot see), asserting nothing within ROAD_HALF_W
+  (on the road) and nothing past 62 m (floating out where the terrain skirt
+  falls away). Measures 13.5–58.5 m for scatter, exactly 11.0 for poles. The
+  prop meshes are named `prop:*` precisely so that check can tell scenery from
+  the dash/edge instances, which live ON the road on purpose. Rebuild it if the
+  scatter is ever retuned — a cactus on the asphalt is invisible to a
+  screenshot unless you happen to drive past it.
 - **Drafting** (Jason's ask, 2026-07-12: "I want to be able to draft the car in
   front of me and pick up speed"). `resolveDraft` in physics.js is a symmetric
   pair check: whoever is behind gets `car.draft` 0..1, and `step` spends it as a
@@ -1000,6 +1026,28 @@ Worth knowing how it was caught, because a screenshot that plausible is a trap:
 the A/B included a palette whose colour was *deliberately unchanged*, and when
 that one measured a difference the harness convicted itself. Put an unchanged
 cell in any visual A/B — it's the cheapest possible check on your own rig.
+
+Two traps when driving the game from a headless test, both of which cost real
+time on 2026-07-16:
+1. **You cannot force the palette by counting `Math.random` calls.**
+   `buildRaceScene` picks `PALETTES[floor(Math.random() * 4)]` as its first
+   statement, so a stub returning the palette on call #1 and an LCG afterwards
+   looks exactly right — and is wrong by about **3000 calls**: `sfx.uiSelect()`
+   synthesises its noise from `Math.random`, and the Enter that starts the race
+   fires it. Use a **constant** stub (`Math.random = () => r`): every call
+   returns r, so `floor(r*4)` is the palette whatever the call order, and
+   varying r *inside that palette's quarter* of [0,1) still moves the track seed
+   (`r*1e9`) so seeds differ. `race.palette` is exposed for exactly this — assert
+   on what you forced, or the harness will quietly measure the same scene N times
+   and report a clean pass.
+2. **Wait on DOM state, never on a timeout.** `finishRace` defers RESULTS by a
+   real 1.8 s (`setTimeout` in main.js), so Escape → Enter → Space → Enter on
+   fixed 350 ms waits lands every keypress back in RACE, where it does nothing
+   and the scene silently never rebuilds. Poll
+   `!classList.contains("hidden")` on `resultScreen` / `garageScreen` /
+   `opponentScreen` / `hud`. Escape bails a race (`states.RACE.onKey`), which is
+   what lets a test cycle scenes without a page reload — far faster than a new
+   page per case.
 
 For car-mesh visual checks, don't squint at dark garage screenshots: load
 the game page in headless chromium, then `page.evaluate` a dynamic

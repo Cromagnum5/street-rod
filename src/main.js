@@ -481,6 +481,7 @@ states.RACE = {
 function buildRaceScene(opp) {
   if (scene) disposeScene(scene);
   const palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+  race.palette = palette; // debug handle: the prop/contrast checks assert on this
   scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.sky);
   scene.fog = new THREE.Fog(palette.fog, 150, 1400);
