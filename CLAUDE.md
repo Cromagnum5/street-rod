@@ -92,22 +92,45 @@ sound is synthesized live with the Web Audio API.
   mesh, instanced dashes/trees, palettes (noon/dusk/desert/night). Also the
   math API used by physics/AI: `sample(d)`, `curvatureAt(d)`, `project(pos,
   hint)`, `racingOffset(d)` (the racing line — see the line entry in Design
-  intent; lazily built once per track, ~2 ms). `sample` also returns `elev`/`grade` — gentle rolling hills landed
+  intent; lazily built once per track, ~2 ms). `sample` also returns `elev`/`grade` — rolling hills landed
   2026-07-11: a slope random walk with a soft spring toward mid-height
   (underdamped, ~500 m wavelength), elevation confined to [0, HILL_MAX] so the
-  flat ground plane never shows above the road, grades ≲4.6%, a smoothstep
+  flat ground plane never shows above the road, a smoothstep
   envelope pinning the launch zone and finish approach to y = 0 (launch
   balance stays flat-road; finished cars coast level), and 3 smoothing
   passes so per-segment grade never steps visibly in `groundPitch`.
-  Hill *height* is one knob, not three: `HILL_MAX`, the slope target and the
-  spring's mid-height share units, so scaling them together stretches the
-  profile in y and leaves the wavelength alone — same number of crests, each
-  taller (Jason asked for +15% on 2026-07-12: 6 → 6.9 m, 4% → 4.6%, which
-  measured +15.0% on mean elevation, mean crest and mean grade alike over 24
-  seeds). Scaling the slope target *alone* would buy steeper hills, not taller
-  ones. The heading walk runs before the hill walk on the same `rand()` stream
+  **Hill drama is `HILL_SCALE`, and it is ONE knob by construction** (Jason,
+  2026-07-17: "can the hills be made more dramatic at times?" — 1 → 3, giving
+  peak 18.5 m / median grade 2.0% / per-seed max 7.9–13.4% vs the old 6.2 m /
+  0.7% / 2.6–4.5%). The recurrence is *linear* in (elevation, slope, band,
+  mid-height), so scaling them together multiplies the profile in y **exactly**
+  — measured identical clip rate (3.8%) and crest count (4.7) at every scale
+  from ×1 to ×3.5, i.e. same crests in the same places, each taller and
+  steeper. That linearity is also why `points[i].y *= k` post-construction is
+  an exact stand-in for the real walk, which is how the camera and balance
+  harnesses A/B'd hills without touching track.js.
+  Widening the band **alone** is the trap: it clips flat against the ceiling
+  (30% of the track pinned, grades reaching 7% instead of 14%), and no spring
+  tune rescues it — stiffening the spring *lowers* max grade (6.2 → 4.8%) while
+  multiplying crests (4.4 → 9.5), because grade × hill length = height and the
+  ceiling caps the product. Steep therefore *requires* headroom.
+  Drama "at times" is free from the existing uniform roll — `slopeTarget` is
+  uniform in ±`HILL_BAND`, so most segments draw a mild target and a few draw a
+  steep one. An explicit steep/gentle mix (`steepP`/`steepAmp`) was built and
+  measured **worse**: median grade 1.0% vs 2.0%, only 4–6% of track over 6% vs
+  14%, and a narrower spread across seeds — more knobs, less drama. Don't.
+  The heading walk runs before the hill walk on the same `rand()` stream
   and self-clearance is plan-view, so retuning heights leaves every seed's road
-  layout bit-identical.
+  layout bit-identical — **verified**, 0 of 14,424 plan-view points moved
+  across 24 seeds going ×1 → ×3.
+  Two fears about taller hills were measured and are **both unfounded** — don't
+  re-derive them: the chase camera never clips a crest (see the camera entry),
+  and the terrain skirt does *not* become an escarpment. The skirt falls from
+  road height to an absolute y = −1.2 over its outer 38 m, so at an 18 m peak
+  that is a ~50% drop on paper; rendered, it reads as ordinary rolling
+  countryside, because it is the same material and colour as the ground plane
+  and is seen at a grazing angle. Headroom past ×3 is real but finite: the
+  camera's margin runs out near ×5.
   Elevation is deliberately a function of centerline distance only (ribbon
   world: nearby off-road shares the road height) so `project`/`curvatureAt`
   stay plan-view math forever. Corollary (fixed 2026-07-11 after Jason hit

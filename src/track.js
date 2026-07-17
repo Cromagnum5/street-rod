@@ -73,24 +73,35 @@ function generate(lengthM, seed) {
     segLeft -= STEP;
   }
 
-  // Gentle rolling hills: a second random walk drives slope the way the
-  // one above drives heading. A soft spring toward mid-height turns the
-  // walk into an underdamped oscillator (~500 m wavelength), and elevation
-  // stays in [0, HILL_MAX] so the flat ground plane never shows above the
-  // road. An envelope pins the launch zone and the finish approach to
-  // y = 0 — launch balance stays flat-road, and finished cars coasting
-  // past the line keep a level y/grade (see physics.js).
-  // HILL_MAX, the slope target and the spring's mid-height are all in the same
-  // units, so scaling them together scales the profile in y and leaves the
-  // wavelength alone — that's the knob for "taller hills" (6 -> 6.9 = +15%,
-  // 2026-07-12).
-  const HILL_MAX = 6.9;
+  // Rolling hills: a second random walk drives slope the way the one above
+  // drives heading. A soft spring toward mid-height turns the walk into an
+  // underdamped oscillator (~500 m wavelength), and elevation stays in
+  // [0, HILL_MAX] so the flat ground plane never shows above the road. An
+  // envelope pins the launch zone and the finish approach to y = 0 — launch
+  // balance stays flat-road, and finished cars coasting past the line keep a
+  // level y/grade (see physics.js).
+  //
+  // HILL_SCALE is the drama knob, and it must stay ONE knob: the recurrence is
+  // linear in (elevation, slope, band, mid-height), so scaling them together
+  // multiplies the profile in y *exactly* and leaves the wavelength alone —
+  // same crests in the same places, each taller and steeper (clip rate and
+  // crest count measure identical at every scale). Widening the band ALONE
+  // just clips flat against the ceiling: 30% of the track pinned, and grades
+  // top out at 7% however you tune the spring, because grade x hill length =
+  // height and the ceiling caps the product.
+  // The band is a *uniform* roll, so widening it is what buys drama "at times"
+  // — most segments still draw a mild target, a few draw a steep one. An
+  // explicit steep/gentle mix was tried and measured worse: rarer drama and a
+  // narrower spread across seeds, for an extra knob.
+  const HILL_SCALE = 3;                 // 1 = the gentle rollers of 2026-07-12
+  const HILL_MAX = 6.9 * HILL_SCALE;    // ceiling; the spring pulls toward half it
+  const HILL_BAND = 0.046 * HILL_SCALE; // slope target, +/- this
   const sm01 = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
   let ey = 0, slope = 0, slopeTarget = 0, hillLeft = 0;
   for (let i = 0; i < n; i++) {
     if (hillLeft <= 0) {
       hillLeft = 140 + rand() * 300;
-      slopeTarget = (rand() - 0.5) * 2 * 0.046; // ≤4.6% grade wanted; still gentle
+      slopeTarget = (rand() - 0.5) * 2 * HILL_BAND;
       if (rand() < 0.25) slopeTarget = 0;
     }
     slope += ((slopeTarget - (ey - HILL_MAX / 2) * 0.012) - slope) * 0.05;
