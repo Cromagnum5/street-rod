@@ -896,6 +896,31 @@ sound is synthesized live with the Web Audio API.
   Known conservatism: the AI still plans its braking off `curvatureAt` (the
   *centerline*), which is tighter than the line it actually drives, so it brakes
   a hair early. It barely brakes at all, so this is left alone.
+  **The AI is blind to `grade`, and teaching it is a measured no-op — don't**
+  (built and reverted 2026-07-17 at Jason's ask, after I flagged it as a latent
+  gap when `HILL_SCALE` went to 3; the flag was wrong). The full principled
+  version was written: `gradeAccel` exported from physics.js so planner and sim
+  can't disagree, gravity folded into `surplusAt`, and the braking scan billed
+  for it by energy (g·Δh over the run-up — endpoints only, exact however the
+  road rolls in between). Result: **≤0.25 s in every cell** (Bel Air L1 / GTO L1
+  / 'Cuda maxed / 'Cuda 3★, 16 seeds) at hills ×3, ×5 *and* ×7 — the last being
+  ~30% grades, far past anything shippable.
+  The mechanism is the point, because it generalises to any future longitudinal
+  tweak. The gravity term is *not* small — 1.28 m/s² at ×3, 2.98 m/s² at ×7 —
+  but it flips the brake **decision** in only **0.12–0.76% of frames**, because
+  `needBrake` is *bimodal*: the foot is down everywhere (see above), so the scan
+  is either far under the comfort threshold or far over it, and a 1–3 m/s² nudge
+  almost never straddles 9.5. Even the 'Cuda, which brakes 14% of frames, flips
+  0.34% at ×3. Grade cannot reach the AI's pace for the same reason the brake
+  pedal is a trap for the player: in this game longitudinal forces don't govern
+  pace, the steering scrub does. Gravity also never touches `vc` itself
+  (`sqrt(grip·(1+boost)/k)` — grip and curvature only), which is where corner
+  pace actually comes from.
+  Corollary for the hills: `HILL_SCALE` is not gated on AI work. If it ever goes
+  past ~5 the *camera* is the binding constraint (see the camera entry), not the
+  planner. Re-open this only if the AI is ever made to genuinely brake — e.g. if
+  the deferred free-dirt-line issue is taken up and it starts driving
+  longitudinally — since the whole no-op rests on it barely braking.
   For the player the same line is worth **0.60–0.80 s** over a 3000 m race
   (32/32 seeds in the low/mid cars) — measured with two flat-out proxies,
   identical spec, neither lifting, differing only in the aim point. That's the
