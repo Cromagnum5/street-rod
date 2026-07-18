@@ -88,6 +88,53 @@ addEventListener("keydown", (e) => {
 });
 addEventListener("keyup", (e) => { keys[e.code] = false; });
 
+// ---------------------------------------------------------------- touch controls
+// Drag anywhere on the canvas: horizontal = steering, vertical up = throttle,
+// vertical down = brake. Blends with keyboard so a Bluetooth keyboard still works
+// alongside touch. Only active during RACE state to avoid interfering with garage
+// menu navigation.
+
+let touchSteer = 0, touchThrottle = 0, touchBrake = 0;
+let touchActive = false, touchStartX = 0, touchStartY = 0;
+
+const TOUCH_STEER_RANGE = 80;   // px of horizontal drag = full lock
+const TOUCH_THROTTLE_RANGE = 120; // px of vertical drag = full throttle/brake
+
+function onTouchStart(e) {
+  if (state !== "RACE") return;
+  e.preventDefault();
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+  touchActive = true;
+  touchSteer = touchThrottle = touchBrake = 0;
+}
+
+function onTouchMove(e) {
+  if (!touchActive || state !== "RACE") return;
+  e.preventDefault();
+  const t = e.touches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = touchStartY - t.clientY; // positive = dragged up = throttle
+  touchSteer    = Math.max(-1, Math.min(1, dx / TOUCH_STEER_RANGE));
+  touchThrottle = dy > 0 ? Math.min(1, dy / TOUCH_THROTTLE_RANGE) : 0;
+  touchBrake    = dy < 0 ? Math.min(1, -dy / TOUCH_THROTTLE_RANGE) : 0;
+}
+
+function onTouchEnd() {
+  touchActive = false;
+  touchSteer = touchThrottle = touchBrake = 0;
+}
+
+// Attach to the canvas once it exists (renderer appends it in the next tick)
+requestAnimationFrame(() => {
+  const canvas = renderer.domElement;
+  canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+  canvas.addEventListener("touchmove",  onTouchMove,  { passive: false });
+  canvas.addEventListener("touchend",   onTouchEnd);
+  canvas.addEventListener("touchcancel", onTouchEnd);
+});
+
 const el = (id) => document.getElementById(id);
 const show = (id) => el(id).classList.remove("hidden");
 const hide = (id) => el(id).classList.add("hidden");
@@ -659,10 +706,13 @@ function raceTick(t, dt) {
   race.time += dt;
   const p = race.player, ai = race.ai;
 
-  const thr = (keys.ArrowUp || keys.KeyW || keys.ControlLeft || keys.ControlRight) ? 1 : 0;
-  const brk = (keys.ArrowDown || keys.KeyS) ? 1 : 0;
+  const keyThr = (keys.ArrowUp || keys.KeyW || keys.ControlLeft || keys.ControlRight) ? 1 : 0;
+  const keyBrk = (keys.ArrowDown || keys.KeyS) ? 1 : 0;
+  const thr = Math.max(keyThr, touchThrottle);
+  const brk = Math.max(keyBrk, touchBrake);
   // keys are digital; ramp toward the target so taps give partial steer
-  const steerTarget = ((keys.ArrowLeft || keys.KeyA) ? 1 : 0) - ((keys.ArrowRight || keys.KeyD) ? 1 : 0);
+  const keySteerTarget = ((keys.ArrowLeft || keys.KeyA) ? 1 : 0) - ((keys.ArrowRight || keys.KeyD) ? 1 : 0);
+  const steerTarget = touchActive ? touchSteer : keySteerTarget;
   race.steer += (steerTarget - race.steer) * Math.min(1, dt * 9);
   const steer = race.steer;
 
