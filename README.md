@@ -25,6 +25,16 @@ then open <http://localhost:8000>. Any static server works.
 | **Space** | garage → find a race |
 | **Esc** | back out (in a race this forfeits — and forfeits the bet) |
 
+**Mobile / touch controls (iOS Safari & Chrome, Android):**
+
+| Gesture | Action |
+|---|---|
+| **Drag up** | throttle (proportional to distance) |
+| **Drag down** | brake |
+| **Drag left / right** | steer (proportional to distance) |
+
+Pair a Bluetooth keyboard and the touch and keyboard inputs blend together seamlessly.
+
 - **The Garage** — buy upgrades: engine, induction, exhaust, tires, gearbox.
   Every engine-side upgrade is audible: the sound is synthesized live from RPM,
   cylinder count, exhaust flow, and blower whine.
